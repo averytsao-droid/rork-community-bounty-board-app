@@ -87,6 +87,8 @@ export default function PostBountyScreen() {
       );
     }
 
+    Alert.alert('Success', 'Bounty posted successfully!');
+
     setTitle('');
     setDescription('');
     setReward('');
@@ -97,14 +99,7 @@ export default function PostBountyScreen() {
     setHuntersNeeded('1');
     setPostToFizz(false);
 
-    Alert.alert('Success', 'Bounty posted successfully!', [
-      {
-        text: 'OK',
-        onPress: () => {
-          router.push('/(tabs)');
-        },
-      },
-    ]);
+    router.push('/(tabs)');
   };
 
   return (
