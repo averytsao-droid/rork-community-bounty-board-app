@@ -94,19 +94,6 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Demo Accounts</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <View style={styles.demoAccounts}>
-            <Text style={styles.demoTitle}>Try these demo accounts:</Text>
-            <Text style={styles.demoAccount}>• alex@dartmouth.edu / password</Text>
-            <Text style={styles.demoAccount}>• sarah@dartmouth.edu / password</Text>
-            <Text style={styles.demoAccount}>• mike@dartmouth.edu / password</Text>
-          </View>
-
           <View style={styles.registerPrompt}>
             <Text style={styles.registerPromptText}>Don&apos;t have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/register')}>
@@ -197,41 +184,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700' as const,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 32,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: '#9CA3AF',
-    fontWeight: '500' as const,
-  },
-  demoAccounts: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  demoTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: '#374151',
-    marginBottom: 12,
-  },
-  demoAccount: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 6,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   footer: {
     padding: 24,

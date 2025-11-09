@@ -5,6 +5,7 @@ import { Bounty, Conversation, Message, Review } from '@/types';
 import { mockBounties } from '@/mocks/bounties';
 import { mockConversations, mockMessages } from '@/mocks/messages';
 import { useAuth } from '@/contexts/AuthContext';
+import { trpc } from '@/lib/trpc';
 
 const STORAGE_KEYS = {
   BOUNTIES: '@bounties',
@@ -35,14 +36,40 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     joinedDate: new Date(),
     credits: 1000,
   };
-  const [bounties, setBounties] = useState<Bounty[]>(mockBounties);
+  const [bounties, setBounties] = useState<Bounty[]>([]);
   const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
   const [myAppliedBounties, setMyAppliedBounties] = useState<string[]>([]);
   const [acceptedBounties, setAcceptedBounties] = useState<string[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
   const [messages, setMessages] = useState<Record<string, Message[]>>(mockMessages);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+
+  const bountiesQuery = trpc.bounties.list.useQuery(undefined, {
+    enabled: !!user,
+  });
+  
+  const myBountiesQuery = trpc.bounties.myBounties.useQuery(undefined, {
+    enabled: !!user,
+  });
+
+  const createBountyMutation = trpc.bounties.create.useMutation({
+    onSuccess: () => {
+      bountiesQuery.refetch();
+      myBountiesQuery.refetch();
+    },
+  });
+
+  useEffect(() => {
+    if (bountiesQuery.data) {
+      setBounties(bountiesQuery.data as Bounty[]);
+    }
+  }, [bountiesQuery.data]);
+
+  useEffect(() => {
+    if (myBountiesQuery.data) {
+      setMyPostedBounties(myBountiesQuery.data as Bounty[]);
+    }
+  }, [myBountiesQuery.data]);
 
   useEffect(() => {
     loadData();
@@ -136,25 +163,20 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   };
 
   const addBounty = useCallback((bounty: Omit<Bounty, 'id' | 'postedBy' | 'postedByName' | 'postedByAvatar' | 'createdAt' | 'applicants'>) => {
-    const newBounty: Bounty = {
-      ...bounty,
-      id: Date.now().toString(),
-      postedBy: currentUser.id,
-      postedByName: currentUser.name,
-      postedByAvatar: currentUser.avatar,
-      createdAt: new Date(),
-      applicants: 0,
-    };
-
-    const updatedBounties = [newBounty, ...bounties];
-    const updatedMyBounties = [newBounty, ...myPostedBounties];
+    createBountyMutation.mutate({
+      title: bounty.title,
+      description: bounty.description,
+      category: bounty.category,
+      reward: bounty.reward,
+      status: bounty.status,
+      duration: bounty.duration,
+      tags: bounty.tags,
+      huntersNeeded: bounty.huntersNeeded,
+      acceptedHunters: bounty.acceptedHunters,
+    });
     
-    setBounties(updatedBounties);
-    setMyPostedBounties(updatedMyBounties);
-    saveData(updatedBounties, updatedMyBounties);
-    
-    console.log('Bounty added:', newBounty);
-  }, [bounties, myPostedBounties]);
+    console.log('Bounty creation requested');
+  }, [createBountyMutation]);
 
   const addReview = useCallback(async (review: Omit<Review, 'id' | 'createdAt'>) => {
     const newReview: Review = {
@@ -543,7 +565,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     conversations,
     messages,
     reviews,
-    isLoading,
+    isLoading: bountiesQuery.isLoading || myBountiesQuery.isLoading,
     addBounty,
     applyToBounty,
     updateBountyStatus,
@@ -566,7 +588,8 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     conversations,
     messages,
     reviews,
-    isLoading,
+    bountiesQuery.isLoading,
+    myBountiesQuery.isLoading,
     addBounty,
     applyToBounty,
     updateBountyStatus,
