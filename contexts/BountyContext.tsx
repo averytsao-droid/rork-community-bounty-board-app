@@ -43,6 +43,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
   const [messages, setMessages] = useState<Record<string, Message[]>>(mockMessages);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const bountiesQuery = trpc.bounties.list.useQuery(undefined, {
     enabled: !!user,
