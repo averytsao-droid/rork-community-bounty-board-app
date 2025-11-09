@@ -87,19 +87,21 @@ export default function PostBountyScreen() {
       );
     }
 
+    setTitle('');
+    setDescription('');
+    setReward('');
+    setDuration('short');
+    setTags('');
+    setCategory(null);
+    setSelectedTemplate(null);
+    setHuntersNeeded('1');
+    setPostToFizz(false);
+
     Alert.alert('Success', 'Bounty posted successfully!', [
       {
         text: 'OK',
         onPress: () => {
-          setTitle('');
-          setDescription('');
-          setReward('');
-          setDuration('short');
-          setTags('');
-          setCategory(null);
-          setSelectedTemplate(null);
-          setHuntersNeeded('1');
-          router.push('/(tabs)/my-bounties');
+          router.push('/(tabs)');
         },
       },
     ]);

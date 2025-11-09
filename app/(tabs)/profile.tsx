@@ -110,7 +110,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.creditsInfo}>
               <Text style={styles.creditsLabel}>Available Credits</Text>
-              <Text style={styles.creditsValue}>${(currentUser.credits || 0).toLocaleString()}</Text>
+              <Text style={styles.creditsValue}>¢{(currentUser.credits || 0).toLocaleString()}</Text>
             </View>
           </View>
           <Text style={styles.creditsSubtext}>Use credits to pay bounty hunters</Text>
