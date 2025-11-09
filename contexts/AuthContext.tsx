@@ -2,7 +2,20 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Notification, Review } from '../types';
-import { currentUser as mockCurrentUser } from '../mocks/users';
+import { getFirebaseAuth, getFirebaseFirestore } from '../lib/firebaseClient';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  Timestamp,
+} from 'firebase/firestore';
 
 const STORAGE_KEY = '@auth_user';
 const NOTIFICATIONS_KEY = '@notifications';
@@ -82,33 +95,7 @@ const serializeUser = (user: User) => JSON.stringify({
   joinedDate: user.joinedDate.toISOString(),
 });
 
-const deserializeUser = (value: string): User | null => {
-  try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    if (typeof parsed.id !== 'string' || typeof parsed.name !== 'string') {
-      return null;
-    }
-    return {
-      id: parsed.id,
-      name: parsed.name,
-      avatar: typeof parsed.avatar === 'string' ? parsed.avatar : buildAvatar(parsed.name),
-      bio: typeof parsed.bio === 'string' ? parsed.bio : '',
-      bountiesPosted: Number(parsed.bountiesPosted) || 0,
-      bountiesCompleted: Number(parsed.bountiesCompleted) || 0,
-      totalEarned: Number(parsed.totalEarned) || 0,
-      rating: Number(parsed.rating) || 0,
-      joinedDate: parseDate(parsed.joinedDate),
-      credits: Number(parsed.credits) || 0,
-      reviews: parseReviews(parsed.reviews),
-      followers: parseStringArray(parsed.followers),
-      following: parseStringArray(parsed.following),
-      accountNumber: typeof parsed.accountNumber === 'number' ? parsed.accountNumber : undefined,
-    };
-  } catch (error) {
-    console.error('Failed to deserialize user cache', error);
-    return null;
-  }
-};
+
 
 const hydrateNotificationDates = (items: Notification[]): Notification[] =>
   items.map((item) => ({
@@ -122,7 +109,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [initializationError, setInitializationError] = useState<string | null>(null);
-  const [authRetryToken, setAuthRetryToken] = useState(0);
+  const [, setAuthRetryToken] = useState(0);
 
 
 
@@ -143,25 +130,54 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, []);
 
   useEffect(() => {
-    const hydrateCachedUser = async () => {
-      try {
-        const storedUser = await AsyncStorage.getItem(STORAGE_KEY);
-        if (storedUser) {
-          const parsedUser = deserializeUser(storedUser);
-          if (parsedUser) {
-            setUser(parsedUser);
-            await loadNotificationsForUser(parsedUser.id);
-            console.log('Hydrated cached user', parsedUser.id);
+    const auth = getFirebaseAuth();
+    const db = getFirebaseFirestore();
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Auth state changed:', firebaseUser?.uid);
+      
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const appUser: User = {
+              id: firebaseUser.uid,
+              name: userData.name || '',
+              avatar: userData.avatar || buildAvatar(userData.name || 'User'),
+              bio: userData.bio || '',
+              bountiesPosted: userData.bountiesPosted || 0,
+              bountiesCompleted: userData.bountiesCompleted || 0,
+              totalEarned: userData.totalEarned || 0,
+              rating: userData.rating || 0,
+              joinedDate: userData.joinedDate?.toDate() || new Date(),
+              credits: userData.credits || 1000,
+              reviews: userData.reviews || [],
+              followers: userData.followers || [],
+              following: userData.following || [],
+              accountNumber: userData.accountNumber,
+            };
+            setUser(appUser);
+            await AsyncStorage.setItem(STORAGE_KEY, serializeUser(appUser));
+            await loadNotificationsForUser(appUser.id);
+            console.log('Loaded Firebase user:', appUser.id);
           }
+        } catch (error) {
+          console.error('Error loading Firebase user:', error);
+          setInitializationError('Failed to load user data');
         }
-      } catch (error) {
-        console.error('Failed to hydrate cached user', error);
-      } finally {
-        setIsLoading(false);
-        setIsInitialized(true);
+      } else {
+        setUser(null);
+        setNotifications([]);
+        await AsyncStorage.removeItem(STORAGE_KEY);
+        console.log('No Firebase user');
       }
-    };
-    hydrateCachedUser();
+      
+      setIsLoading(false);
+      setIsInitialized(true);
+    });
+
+    return () => unsubscribe();
   }, [loadNotificationsForUser]);
 
 
@@ -205,69 +221,85 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setUser(mockCurrentUser);
-      await AsyncStorage.setItem(STORAGE_KEY, serializeUser(mockCurrentUser));
-      await loadNotificationsForUser(mockCurrentUser.id);
-      console.log('Mock login success', email);
+      const auth = getFirebaseAuth();
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('Firebase login success:', userCredential.user.uid);
       return true;
-    } catch (error) {
-      console.error('Login failed', error);
+    } catch (error: any) {
+      console.error('Login failed:', error.message);
       return false;
     }
-  }, [loadNotificationsForUser]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
-      setUser(null);
-      setNotifications([]);
-      await AsyncStorage.removeItem(STORAGE_KEY);
-      console.log('Logout success');
+      const auth = getFirebaseAuth();
+      await signOut(auth);
+      console.log('Firebase logout success');
     } catch (error) {
-      console.error('Logout failed', error);
+      console.error('Logout failed:', error);
     }
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string, bio: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const newUser: User = {
-        ...mockCurrentUser,
+      const auth = getFirebaseAuth();
+      const db = getFirebaseFirestore();
+      
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userId = userCredential.user.uid;
+      
+      const newUser = {
         name,
+        email,
         bio,
         avatar: buildAvatar(name),
-        joinedDate: new Date(),
+        bountiesPosted: 0,
+        bountiesCompleted: 0,
+        totalEarned: 0,
+        rating: 0,
+        joinedDate: Timestamp.now(),
+        credits: 1000,
+        reviews: [],
+        followers: [],
+        following: [],
       };
-      setUser(newUser);
-      await AsyncStorage.setItem(STORAGE_KEY, serializeUser(newUser));
-      await loadNotificationsForUser(newUser.id);
-      console.log('Mock registration success', email);
+      
+      await setDoc(doc(db, 'users', userId), newUser);
+      console.log('Firebase registration success:', userId);
       return { success: true };
-    } catch (error) {
-      console.error('Registration failed', error);
-      return { success: false, error: 'Registration failed' };
+    } catch (error: any) {
+      console.error('Registration failed:', error.message);
+      return { success: false, error: error.message || 'Registration failed' };
     }
-  }, [loadNotificationsForUser]);
+  }, []);
 
   const updateProfile = useCallback(async (updates: { name?: string; bio?: string; avatar?: string }): Promise<{ success: boolean; error?: string }> => {
     if (!user) {
       return { success: false, error: 'No user logged in' };
     }
     try {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      const db = getFirebaseFirestore();
+      const userRef = doc(db, 'users', user.id);
+      
+      const updateData: any = {};
+      if (updates.name) updateData.name = updates.name;
+      if (updates.bio !== undefined) updateData.bio = updates.bio;
+      if (updates.avatar) updateData.avatar = updates.avatar;
+      
+      await updateDoc(userRef, updateData);
+      
       const updatedUser: User = {
         ...user,
-        ...(updates.name && { name: updates.name }),
-        ...(updates.bio !== undefined && { bio: updates.bio }),
-        ...(updates.avatar && { avatar: updates.avatar }),
+        ...updateData,
       };
       setUser(updatedUser);
       await AsyncStorage.setItem(STORAGE_KEY, serializeUser(updatedUser));
-      console.log('Profile updated', user.id);
+      console.log('Profile updated:', user.id);
       return { success: true };
-    } catch (error) {
-      console.error('Profile update failed', error);
-      return { success: false, error: 'Failed to update profile' };
+    } catch (error: any) {
+      console.error('Profile update failed:', error.message);
+      return { success: false, error: error.message || 'Failed to update profile' };
     }
   }, [user]);
 
@@ -276,16 +308,29 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       return;
     }
     try {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      const db = getFirebaseFirestore();
+      const userRef = doc(db, 'users', user.id);
+      const targetRef = doc(db, 'users', targetUserId);
+      
+      const updatedFollowing = [...(user.following ?? []), targetUserId];
+      await updateDoc(userRef, { following: updatedFollowing });
+      
+      const targetDoc = await getDoc(targetRef);
+      if (targetDoc.exists()) {
+        const targetData = targetDoc.data();
+        const updatedFollowers = [...(targetData.followers || []), user.id];
+        await updateDoc(targetRef, { followers: updatedFollowers });
+      }
+      
       const updatedUser: User = {
         ...user,
-        following: [...(user.following ?? []), targetUserId],
+        following: updatedFollowing,
       };
       setUser(updatedUser);
       await AsyncStorage.setItem(STORAGE_KEY, serializeUser(updatedUser));
-      console.log('User followed', targetUserId);
-    } catch (error) {
-      console.error('Follow user failed', error);
+      console.log('User followed:', targetUserId);
+    } catch (error: any) {
+      console.error('Follow user failed:', error.message);
     }
   }, [user]);
 
@@ -294,28 +339,59 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       return;
     }
     try {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      const db = getFirebaseFirestore();
+      const userRef = doc(db, 'users', user.id);
+      const targetRef = doc(db, 'users', targetUserId);
+      
+      const updatedFollowing = (user.following ?? []).filter((id) => id !== targetUserId);
+      await updateDoc(userRef, { following: updatedFollowing });
+      
+      const targetDoc = await getDoc(targetRef);
+      if (targetDoc.exists()) {
+        const targetData = targetDoc.data();
+        const updatedFollowers = (targetData.followers || []).filter((id: string) => id !== user.id);
+        await updateDoc(targetRef, { followers: updatedFollowers });
+      }
+      
       const updatedUser: User = {
         ...user,
-        following: (user.following ?? []).filter((id) => id !== targetUserId),
+        following: updatedFollowing,
       };
       setUser(updatedUser);
       await AsyncStorage.setItem(STORAGE_KEY, serializeUser(updatedUser));
-      console.log('User unfollowed', targetUserId);
-    } catch (error) {
-      console.error('Unfollow user failed', error);
+      console.log('User unfollowed:', targetUserId);
+    } catch (error: any) {
+      console.error('Unfollow user failed:', error.message);
     }
   }, [user]);
 
   const getUserById = useCallback(async (userId: string): Promise<User | null> => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      if (userId === mockCurrentUser.id) {
-        return mockCurrentUser;
+      const db = getFirebaseFirestore();
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        return {
+          id: userId,
+          name: userData.name || '',
+          avatar: userData.avatar || buildAvatar(userData.name || 'User'),
+          bio: userData.bio || '',
+          bountiesPosted: userData.bountiesPosted || 0,
+          bountiesCompleted: userData.bountiesCompleted || 0,
+          totalEarned: userData.totalEarned || 0,
+          rating: userData.rating || 0,
+          joinedDate: userData.joinedDate?.toDate() || new Date(),
+          credits: userData.credits || 0,
+          reviews: userData.reviews || [],
+          followers: userData.followers || [],
+          following: userData.following || [],
+          accountNumber: userData.accountNumber,
+        };
       }
       return null;
-    } catch (error) {
-      console.error('Get user by id failed', error);
+    } catch (error: any) {
+      console.error('Get user by id failed:', error.message);
       return null;
     }
   }, []);
