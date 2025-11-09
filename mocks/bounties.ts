@@ -136,7 +136,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Save Me a Table',
     category: 'waiting-holding',
     title: 'Save me a table at [location]',
-    description: 'Location: [dining hall/library/etc]\n\nWhen: [time]\n\nHow many seats: [number]\n\nI\'ll arrive by: [time]\n\nAdditional details:',
+    description: 'Location:\n\nWhen:\n\nHow many seats:\n\nI\'ll arrive by:\n\nAdditional details:',
     tags: ['Table', 'Seat', 'Waiting'],
   },
   {
@@ -144,7 +144,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Add My Order',
     category: 'need-dining-dollars',
     title: 'Add my order onto yours at [location]',
-    description: 'Location: [FoCo/Collis/Novack/etc]\n\nWhat I need:\n- \n- \n\nWhen: [time]\nWhere to deliver: [dorm/location]\n\nWill Venmo immediately + tip!',
+    description: 'Location:\n\nWhat I need:\n- \n- \n\nWhen:\nWhere to deliver:\n\nWill Venmo immediately + tip!',
     tags: ['Food', 'Dining Dollars'],
   },
   {
@@ -152,7 +152,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Deliver Me Food',
     category: 'need-dining-dollars',
     title: 'Deliver me food from [location]',
-    description: 'Location: [FoCo/Collis/Novack/etc]\n\nWhat I want:\n- \n- \n\nWhen: [time]\nDeliver to: [dorm/location]\n\nWill cover cost + delivery tip!',
+    description: 'Location:\n\nWhat I want:\n- \n- \n\nWhen:\nDeliver to:\n\nWill cover cost + delivery tip!',
     tags: ['Food', 'Delivery'],
   },
   {
@@ -160,7 +160,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Tutor Me in IB',
     category: 'need-skills',
     title: 'Tutor me in IB [subject]',
-    description: 'Subject: [Math/Science/Language/etc]\n\nTopic: [specific topic]\n\nWhen: [date/time]\n\nHow long: [duration]\n\nWhere: [location or online]\n\nAdditional info:',
+    description: 'Subject:\n\nTopic:\n\nWhen:\n\nHow long:\n\nWhere:\n\nAdditional info:',
     tags: ['IB', 'Tutoring', 'Education'],
   },
   {
@@ -168,7 +168,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Drive Me Somewhere',
     category: 'need-car',
     title: 'Drive me to [destination]',
-    description: 'From: [starting location]\nTo: [destination]\n\nWhen: [date/time]\n\nRound trip or one-way: [specify]\n\nEstimated time: [duration]\n\nWill cover gas + extra for your time!',
+    description: 'From:\nTo:\n\nWhen:\n\nRound trip or one-way:\n\nEstimated time:\n\nWill cover gas + extra for your time!',
     tags: ['Ride', 'Transportation', 'Car'],
   },
 ];

@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Linking,
+  Platform,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ChevronDown, DollarSign, Clock, Tag, Users, Share2 } from 'lucide-react-native';
@@ -75,16 +77,35 @@ export default function PostBountyScreen() {
     });
 
     if (postToFizz) {
-      console.log('Creating Fizz post:', {
-        title: title.trim(),
-        reward: Number(reward),
-        description: description.trim(),
+      const fizzText = encodeURIComponent(`${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}`);
+      const fizzUrl = `https://fizz.social/post?text=${fizzText}`;
+      
+      Linking.canOpenURL(fizzUrl).then((supported) => {
+        if (supported) {
+          Linking.openURL(fizzUrl);
+        } else {
+          console.log('Creating Fizz post:', {
+            title: title.trim(),
+            reward: Number(reward),
+            description: description.trim(),
+          });
+          Alert.alert(
+            'Fizz Not Available',
+            `Your bounty has been posted! To share on Fizz, please copy this text and post manually:\n\n"${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}"`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Copy Text',
+                onPress: async () => {
+                  if (Platform.OS === 'web') {
+                    navigator.clipboard.writeText(`${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}`);
+                  }
+                }
+              }
+            ]
+          );
+        }
       });
-      Alert.alert(
-        'Fizz Integration',
-        `Would create a Fizz post:\n\n"${title.trim()} - Paying ${reward}"\n\nNote: Fizz API integration would be implemented here.`,
-        [{ text: 'OK' }]
-      );
     }
 
     Alert.alert('Success', 'Bounty posted successfully!');

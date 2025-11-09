@@ -87,7 +87,7 @@ export default function BrowseBountiesScreen() {
 
           <View style={styles.bountyRewardRow}>
             <DollarSign size={16} color="#10B981" />
-            <Text style={styles.bountyRewardText}>${bounty.reward}</Text>
+            <Text style={styles.bountyRewardText}>{bounty.reward}</Text>
           </View>
 
           {!isExpanded && (
@@ -119,7 +119,7 @@ export default function BrowseBountiesScreen() {
                 <View style={styles.detailRow}>
                   <DollarSign size={18} color="#8B5CF6" />
                   <Text style={styles.detailLabel}>Reward:</Text>
-                  <Text style={styles.detailValue}>${bounty.reward}</Text>
+                  <Text style={styles.detailValue}>{bounty.reward}</Text>
                 </View>
 
                 <View style={styles.detailRow}>
