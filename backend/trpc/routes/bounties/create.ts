@@ -18,15 +18,35 @@ export const createBountyProcedure = publicProcedure
     })
   )
   .mutation(async ({ input }) => {
+    console.log('============================================');
+    console.log('CREATE BOUNTY MUTATION CALLED');
+    console.log('============================================');
+    console.log('Input data:', JSON.stringify(input, null, 2));
+    
     try {
+      console.log('[Step 1] Getting Firebase Auth...');
       const auth = getFirebaseAuth();
+      console.log('[Step 1] ✓ Firebase Auth obtained');
+      
+      console.log('[Step 2] Getting Firestore...');
       const db = getFirebaseFirestore();
+      console.log('[Step 2] ✓ Firestore obtained');
+      
+      console.log('[Step 3] Checking current user...');
       const currentUser = auth.currentUser;
+      console.log('[Step 3] Current user:', currentUser ? {
+        uid: currentUser.uid,
+        email: currentUser.email,
+        displayName: currentUser.displayName
+      } : 'NO USER LOGGED IN');
 
       if (!currentUser) {
+        console.log('[Step 3] ✗ ERROR: No authenticated user!');
         throw new Error('User must be authenticated');
       }
+      console.log('[Step 3] ✓ User authenticated');
 
+      console.log('[Step 4] Preparing bounty data...');
       const bountyData = {
         title: input.title,
         description: input.description,
@@ -41,10 +61,21 @@ export const createBountyProcedure = publicProcedure
         createdAt: Timestamp.now(),
         applicants: 0,
       };
+      console.log('[Step 4] ✓ Bounty data prepared:', JSON.stringify(bountyData, null, 2));
 
-      const docRef = await addDoc(collection(db, 'bounties'), bountyData);
+      console.log('[Step 5] Getting bounties collection reference...');
+      const bountiesCollection = collection(db, 'bounties');
+      console.log('[Step 5] ✓ Collection reference obtained');
+
+      console.log('[Step 6] Writing to Firestore...');
+      const docRef = await addDoc(bountiesCollection, bountyData);
+      console.log('[Step 6] ✓ Document written successfully!');
+      console.log('[Step 6] Document ID:', docRef.id);
+      console.log('[Step 6] Document Path:', docRef.path);
       
-      console.log('Bounty created:', docRef.id);
+      console.log('============================================');
+      console.log('BOUNTY CREATION SUCCESSFUL!');
+      console.log('============================================');
       
       return {
         id: docRef.id,
@@ -52,7 +83,15 @@ export const createBountyProcedure = publicProcedure
         createdAt: new Date(),
       };
     } catch (error: any) {
-      console.error('Failed to create bounty:', error);
+      console.log('============================================');
+      console.log('BOUNTY CREATION FAILED!');
+      console.log('============================================');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+        fullError: error
+      });
       throw new Error(error.message || 'Failed to create bounty');
     }
   });

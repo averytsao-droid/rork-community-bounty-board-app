@@ -76,16 +76,29 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   });
 
   const createBountyMutation = trpc.bounties.create.useMutation({
-    onSuccess: async () => {
-      console.log('Bounty created successfully, invalidating queries');
+    onSuccess: async (data) => {
+      console.log('============================================');
+      console.log('MUTATION SUCCESS CALLBACK');
+      console.log('============================================');
+      console.log('Mutation returned data:', data);
+      console.log('Refetching queries...');
       await Promise.all([
         bountiesQuery.refetch(),
         myBountiesQuery.refetch(),
       ]);
-      console.log('Queries refetched after bounty creation');
+      console.log('✓ Queries refetched successfully');
+      console.log('============================================');
     },
     onError: (error) => {
-      console.error('Failed to create bounty:', error);
+      console.log('============================================');
+      console.log('MUTATION ERROR CALLBACK');
+      console.log('============================================');
+      console.error('Mutation error:', {
+        message: error.message,
+        data: error.data,
+        shape: error.shape,
+        fullError: error
+      });
     },
   });
 
@@ -231,9 +244,24 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   };
 
   const addBounty = useCallback(async (bounty: Omit<Bounty, 'id' | 'postedBy' | 'postedByName' | 'postedByAvatar' | 'createdAt' | 'applicants'>) => {
-    console.log('Creating bounty:', bounty.title);
+    console.log('============================================');
+    console.log('addBounty() CALLED FROM CONTEXT');
+    console.log('============================================');
+    console.log('Bounty data to create:', {
+      title: bounty.title,
+      description: bounty.description,
+      category: bounty.category,
+      reward: bounty.reward,
+      status: bounty.status,
+      duration: bounty.duration,
+      tags: bounty.tags,
+      huntersNeeded: bounty.huntersNeeded,
+      acceptedHunters: bounty.acceptedHunters,
+    });
+    
     try {
-      await createBountyMutation.mutateAsync({
+      console.log('Calling createBountyMutation.mutateAsync()...');
+      const result = await createBountyMutation.mutateAsync({
         title: bounty.title,
         description: bounty.description,
         category: bounty.category,
@@ -244,9 +272,18 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         huntersNeeded: bounty.huntersNeeded,
         acceptedHunters: bounty.acceptedHunters,
       });
-      console.log('Bounty created successfully');
-    } catch (error) {
-      console.error('Error creating bounty:', error);
+      console.log('✓ createBountyMutation.mutateAsync() completed');
+      console.log('Result:', result);
+      console.log('============================================');
+    } catch (error: any) {
+      console.log('============================================');
+      console.log('✗ ERROR in addBounty()');
+      console.log('============================================');
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        fullError: error
+      });
       throw error;
     }
   }, [createBountyMutation]);

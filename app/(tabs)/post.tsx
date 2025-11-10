@@ -44,6 +44,10 @@ export default function PostBountyScreen() {
   };
 
   const handleSubmit = async () => {
+    console.log('============================================');
+    console.log('POST BOUNTY FORM SUBMITTED');
+    console.log('============================================');
+    
     if (!title.trim()) {
       Alert.alert('Error', 'Please enter a title');
       return;
@@ -64,7 +68,21 @@ export default function PostBountyScreen() {
 
     const huntersCount = Number(huntersNeeded) || 1;
 
+    console.log('Form validation passed');
+    console.log('Prepared bounty data:', {
+      title: title.trim(),
+      description: description.trim(),
+      category,
+      reward: Number(reward),
+      status: 'open',
+      duration,
+      tags: tagArray,
+      huntersNeeded: huntersCount,
+      acceptedHunters: [],
+    });
+
     try {
+      console.log('Calling addBounty()...');
       await addBounty({
         title: title.trim(),
         description: description.trim(),
@@ -76,6 +94,7 @@ export default function PostBountyScreen() {
         huntersNeeded: huntersCount,
         acceptedHunters: [],
       });
+      console.log('✓ addBounty() completed successfully');
 
       if (postToFizz) {
         const fizzText = encodeURIComponent(`${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}`);
@@ -109,6 +128,10 @@ export default function PostBountyScreen() {
         });
       }
 
+      console.log('============================================');
+      console.log('BOUNTY POST SUCCESSFUL!');
+      console.log('============================================');
+      
       Alert.alert('Success', 'Bounty posted successfully!');
 
       setTitle('');
@@ -123,7 +146,14 @@ export default function PostBountyScreen() {
 
       router.push('/(tabs)');
     } catch (error: any) {
-      console.error('Failed to create bounty:', error);
+      console.log('============================================');
+      console.log('BOUNTY POST FAILED!');
+      console.log('============================================');
+      console.error('Error in handleSubmit:', {
+        message: error.message,
+        stack: error.stack,
+        fullError: error
+      });
       Alert.alert('Error', error.message || 'Failed to create bounty. Please try again.');
     }
   };
