@@ -125,7 +125,7 @@ export const mockBounties: Bounty[] = [
 
 export const durationLabels: Record<string, string> = {
   'quick': 'Few minutes',
-  'short': '~30 min',
+  'short': 'Under 30 minutes',
   'medium': '30 min - 2 hr',
   'long': '2+ hours',
 };
@@ -144,7 +144,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Add My Order',
     category: 'need-dining-dollars',
     title: 'Add my order onto yours at [location]',
-    description: 'Location:\n\nWhat I need:\n- \n- \n\nWhen:\nWhere to deliver:\n\nWill Venmo immediately + tip!',
+    description: 'Location:\n\nWhat I need:\n- \n- \n\nWhen:\nWhere to deliver:\n\nNote: Exchange rate is $2 = 3 dining dollars\n\nWill Venmo immediately + tip!',
     tags: ['Food', 'Dining Dollars'],
   },
   {
@@ -152,7 +152,7 @@ export const bountyTemplates: BountyTemplate[] = [
     name: 'Deliver Me Food',
     category: 'need-dining-dollars',
     title: 'Deliver me food from [location]',
-    description: 'Location:\n\nWhat I want:\n- \n- \n\nWhen:\nDeliver to:\n\nWill cover cost + delivery tip!',
+    description: 'Location:\n\nWhat I want:\n- \n- \n\nWhen:\nDeliver to:\n\nNote: Exchange rate is $2 = 3 dining dollars\n\nWill cover cost + delivery tip!',
     tags: ['Food', 'Delivery'],
   },
   {
