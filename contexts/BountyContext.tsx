@@ -76,23 +76,39 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   });
 
   const createBountyMutation = trpc.bounties.create.useMutation({
-    onSuccess: () => {
-      console.log('Bounty created successfully, refetching queries');
-      bountiesQuery.refetch();
-      myBountiesQuery.refetch();
+    onSuccess: async () => {
+      console.log('Bounty created successfully, invalidating queries');
+      await Promise.all([
+        bountiesQuery.refetch(),
+        myBountiesQuery.refetch(),
+      ]);
+      console.log('Queries refetched after bounty creation');
+    },
+    onError: (error) => {
+      console.error('Failed to create bounty:', error);
     },
   });
 
   const acceptBountyMutation = trpc.bounties.accept.useMutation({
-    onSuccess: () => {
-      console.log('Bounty accepted successfully, refetching queries');
-      bountiesQuery.refetch();
-      acceptedBountiesQuery.refetch();
+    onSuccess: async () => {
+      console.log('Bounty accepted successfully, invalidating queries');
+      await Promise.all([
+        bountiesQuery.refetch(),
+        acceptedBountiesQuery.refetch(),
+      ]);
+      console.log('Queries refetched after bounty acceptance');
+    },
+    onError: (error) => {
+      console.error('Failed to accept bounty:', error);
     },
   });
   const createConversationMutation = trpc.conversations.create.useMutation({
-    onSuccess: () => {
-      conversationsQuery.refetch();
+    onSuccess: async () => {
+      console.log('Conversation created successfully');
+      await conversationsQuery.refetch();
+    },
+    onError: (error) => {
+      console.error('Failed to create conversation:', error);
     },
   });
   const sendMessageMutation = trpc.conversations.sendMessage.useMutation();
@@ -214,20 +230,25 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   };
 
-  const addBounty = useCallback((bounty: Omit<Bounty, 'id' | 'postedBy' | 'postedByName' | 'postedByAvatar' | 'createdAt' | 'applicants'>) => {
-    createBountyMutation.mutate({
-      title: bounty.title,
-      description: bounty.description,
-      category: bounty.category,
-      reward: bounty.reward,
-      status: bounty.status,
-      duration: bounty.duration,
-      tags: bounty.tags,
-      huntersNeeded: bounty.huntersNeeded,
-      acceptedHunters: bounty.acceptedHunters,
-    });
-    
-    console.log('Bounty creation requested');
+  const addBounty = useCallback(async (bounty: Omit<Bounty, 'id' | 'postedBy' | 'postedByName' | 'postedByAvatar' | 'createdAt' | 'applicants'>) => {
+    console.log('Creating bounty:', bounty.title);
+    try {
+      await createBountyMutation.mutateAsync({
+        title: bounty.title,
+        description: bounty.description,
+        category: bounty.category,
+        reward: bounty.reward,
+        status: bounty.status,
+        duration: bounty.duration,
+        tags: bounty.tags,
+        huntersNeeded: bounty.huntersNeeded,
+        acceptedHunters: bounty.acceptedHunters,
+      });
+      console.log('Bounty created successfully');
+    } catch (error) {
+      console.error('Error creating bounty:', error);
+      throw error;
+    }
   }, [createBountyMutation]);
 
   const addReview = useCallback(async (review: Omit<Review, 'id' | 'createdAt'>) => {
