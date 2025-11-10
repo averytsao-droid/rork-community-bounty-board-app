@@ -5,7 +5,19 @@ import { Bounty, Conversation, Message, Review } from '@/types';
 import { mockBounties } from '@/mocks/bounties';
 import { mockConversations, mockMessages } from '@/mocks/messages';
 import { useAuth } from '@/contexts/AuthContext';
-import { trpc } from '@/lib/trpc';
+import { getFirebaseFirestore } from '@/lib/firebaseClient';
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy, 
+  Timestamp,
+  doc,
+  updateDoc,
+  arrayUnion
+} from 'firebase/firestore';
 
 const STORAGE_KEYS = {
   BOUNTIES: '@bounties',
@@ -51,125 +63,103 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     credits: 1000,
   }, [user]);
 
-  const bountiesQuery = trpc.bounties.list.useQuery(undefined, {
-    enabled: !!user,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-  });
-  
-  const myBountiesQuery = trpc.bounties.myBounties.useQuery(undefined, {
-    enabled: !!user,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-  });
+  const loadBounties = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      const q = query(bountiesRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const loadedBounties = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      console.log('Loaded bounties from Firebase:', loadedBounties.length);
+      setBounties(loadedBounties);
+    } catch (error) {
+      console.error('Error loading bounties:', error);
+    }
+  }, [user]);
 
-  const acceptedBountiesQuery = trpc.bounties.accepted.useQuery(undefined, {
-    enabled: !!user,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-  });
+  const loadMyBounties = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      const q = query(bountiesRef, where('postedBy', '==', user.id), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const loadedBounties = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      console.log('Loaded my bounties from Firebase:', loadedBounties.length);
+      setMyPostedBounties(loadedBounties);
+    } catch (error) {
+      console.error('Error loading my bounties:', error);
+    }
+  }, [user]);
 
-  const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
-    enabled: !!user,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-  });
+  const loadAcceptedBounties = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      const q = query(bountiesRef, where('acceptedHunters', 'array-contains', user.id));
+      const snapshot = await getDocs(q);
+      const loadedBounties = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      console.log('Loaded accepted bounties from Firebase:', loadedBounties.length);
+      setAcceptedBountiesList(loadedBounties);
+      setAcceptedBounties(loadedBounties.map(b => b.id));
+      setMyAppliedBounties(loadedBounties.map(b => b.id));
+    } catch (error) {
+      console.error('Error loading accepted bounties:', error);
+    }
+  }, [user]);
 
-  const createBountyMutation = trpc.bounties.create.useMutation({
-    onSuccess: async (data) => {
-      console.log('============================================');
-      console.log('MUTATION SUCCESS CALLBACK');
-      console.log('============================================');
-      console.log('Mutation returned data:', data);
-      console.log('Refetching queries...');
-      await Promise.all([
-        bountiesQuery.refetch(),
-        myBountiesQuery.refetch(),
-      ]);
-      console.log('✓ Queries refetched successfully');
-      console.log('============================================');
-    },
-    onError: (error) => {
-      console.log('============================================');
-      console.log('MUTATION ERROR CALLBACK');
-      console.log('============================================');
-      console.error('Mutation error:', error);
-      console.error('Error message:', error?.message);
-      console.error('Error data:', error?.data);
-      console.error('Error shape:', error?.shape);
-      console.error('Error stringified:', JSON.stringify(error, null, 2));
-    },
-  });
-
-  const acceptBountyMutation = trpc.bounties.accept.useMutation({
-    onSuccess: async () => {
-      console.log('Bounty accepted successfully, invalidating queries');
-      await Promise.all([
-        bountiesQuery.refetch(),
-        acceptedBountiesQuery.refetch(),
-      ]);
-      console.log('Queries refetched after bounty acceptance');
-    },
-    onError: (error) => {
-      console.error('Failed to accept bounty:', error);
-    },
-  });
-  const createConversationMutation = trpc.conversations.create.useMutation({
-    onSuccess: async () => {
-      console.log('Conversation created successfully');
-      await conversationsQuery.refetch();
-    },
-    onError: (error) => {
-      console.error('Failed to create conversation:', error);
-    },
-  });
-  const sendMessageMutation = trpc.conversations.sendMessage.useMutation();
+  const loadConversations = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(
+        conversationsRef,
+        where('participantIds', 'array-contains', user.id),
+        orderBy('lastMessageTime', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const loadedConversations = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        lastMessageTime: doc.data().lastMessageTime?.toDate() || new Date(),
+      })) as Conversation[];
+      console.log('Loaded conversations from Firebase:', loadedConversations.length);
+      setConversations(loadedConversations);
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+    }
+  }, [user]);
 
   useEffect(() => {
-    if (bountiesQuery.data) {
-      console.log('Setting bounties from backend:', bountiesQuery.data.length);
-      setBounties(bountiesQuery.data as Bounty[]);
+    if (user) {
+      setIsLoading(true);
+      Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]).finally(() => {
+        setIsLoading(false);
+      });
+    } else {
       setIsLoading(false);
-    } else if (bountiesQuery.isError) {
-      console.error('Error loading bounties:', bountiesQuery.error);
-      setIsLoading(false);
-    } else if (!user) {
-      setIsLoading(false);
     }
-  }, [bountiesQuery.data, bountiesQuery.isError, bountiesQuery.error, user]);
-
-  useEffect(() => {
-    if (myBountiesQuery.data) {
-      console.log('Setting my bounties from backend:', myBountiesQuery.data.length);
-      setMyPostedBounties(myBountiesQuery.data as Bounty[]);
-    } else if (myBountiesQuery.isError) {
-      console.error('Error loading my bounties:', myBountiesQuery.error);
-    }
-  }, [myBountiesQuery.data, myBountiesQuery.isError, myBountiesQuery.error]);
-
-  useEffect(() => {
-    if (acceptedBountiesQuery.data) {
-      console.log('Setting accepted bounties from backend:', acceptedBountiesQuery.data.length);
-      const accepted = acceptedBountiesQuery.data as Bounty[];
-      setAcceptedBountiesList(accepted);
-      setAcceptedBounties(accepted.map(b => b.id));
-      setMyAppliedBounties(accepted.map(b => b.id));
-    } else if (acceptedBountiesQuery.isError) {
-      console.error('Error loading accepted bounties:', acceptedBountiesQuery.error);
-    }
-  }, [acceptedBountiesQuery.data, acceptedBountiesQuery.isError, acceptedBountiesQuery.error]);
-
-  useEffect(() => {
-    if (conversationsQuery.data) {
-      console.log('Setting conversations from backend:', conversationsQuery.data.length);
-      setConversations(conversationsQuery.data as Conversation[]);
-      setConversationsInitialized(true);
-    } else if (!conversationsInitialized && !user) {
-      setConversations(mockConversations);
-      setMessages(mockMessages);
-      setConversationsInitialized(true);
-    }
-  }, [conversationsQuery.data, conversationsInitialized, user]);
+  }, [user, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
   useEffect(() => {
     loadData();
@@ -246,33 +236,32 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     console.log('============================================');
     console.log('addBounty() CALLED FROM CONTEXT');
     console.log('============================================');
-    console.log('Bounty data to create:', {
-      title: bounty.title,
-      description: bounty.description,
-      category: bounty.category,
-      reward: bounty.reward,
-      status: bounty.status,
-      duration: bounty.duration,
-      tags: bounty.tags,
-      huntersNeeded: bounty.huntersNeeded,
-      acceptedHunters: bounty.acceptedHunters,
-    });
+    console.log('Bounty data to create:', bounty);
+    
+    if (!user) {
+      throw new Error('Must be logged in to create a bounty');
+    }
     
     try {
-      console.log('Calling createBountyMutation.mutateAsync()...');
-      const result = await createBountyMutation.mutateAsync({
-        title: bounty.title,
-        description: bounty.description,
-        category: bounty.category,
-        reward: bounty.reward,
-        status: bounty.status,
-        duration: bounty.duration,
-        tags: bounty.tags,
-        huntersNeeded: bounty.huntersNeeded,
-        acceptedHunters: bounty.acceptedHunters,
-      });
-      console.log('✓ createBountyMutation.mutateAsync() completed');
-      console.log('Result:', result);
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      
+      const bountyData = {
+        ...bounty,
+        postedBy: user.id,
+        postedByName: user.name,
+        postedByAvatar: user.avatar,
+        createdAt: Timestamp.now(),
+        applicants: 0,
+      };
+      
+      console.log('Creating bounty in Firebase:', bountyData);
+      const docRef = await addDoc(bountiesRef, bountyData);
+      console.log('✓ Bounty created with ID:', docRef.id);
+      
+      await loadBounties();
+      await loadMyBounties();
+      
       console.log('============================================');
     } catch (error: any) {
       console.log('============================================');
@@ -281,11 +270,9 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error:', error);
       console.error('Error message:', error?.message);
       console.error('Error stack:', error?.stack);
-      console.error('Error data:', error?.data);
-      console.error('Error stringified:', JSON.stringify(error, null, 2));
       throw error;
     }
-  }, [createBountyMutation]);
+  }, [user, loadBounties, loadMyBounties]);
 
   const addReview = useCallback(async (review: Omit<Review, 'id' | 'createdAt'>) => {
     const newReview: Review = {
@@ -325,7 +312,13 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
     try {
       console.log('Accepting bounty:', bountyId);
-      await acceptBountyMutation.mutateAsync({ bountyId });
+      const db = getFirebaseFirestore();
+      
+      const bountyRef = doc(db, 'bounties', bountyId);
+      await updateDoc(bountyRef, {
+        acceptedHunters: arrayUnion(currentUser.id),
+        applicants: (bounty.applicants || 0) + 1,
+      });
 
       const huntersNeeded = bounty.huntersNeeded || 1;
       const acceptedHunters = bounty.acceptedHunters || [];
@@ -346,24 +339,26 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         })),
       ];
 
-      const result = await createConversationMutation.mutateAsync({
-        type: 'direct',
+      const conversationData = {
+        type: 'direct' as const,
         participantId: bounty.postedBy,
         participantName: bounty.postedByName,
         participantAvatar: bounty.postedByAvatar,
+        participantIds: [currentUser.id, bounty.postedBy],
         participants: huntersNeeded > 1 ? participants : undefined,
         bountyId: bounty.id,
         bountyTitle: bounty.title,
         originalReward: bounty.reward,
-      });
-
-      await sendMessageMutation.mutateAsync({
-        conversationId: result.id,
-        content: huntersNeeded > 1 
+        lastMessage: huntersNeeded > 1 
           ? `You accepted the bounty "${bounty.title}" for ${bounty.reward}. This bounty needs ${huntersNeeded} hunters. Good luck!`
           : `You accepted the bounty "${bounty.title}" for ${bounty.reward}. Good luck!`,
-        type: 'text',
-      });
+        lastMessageTime: Timestamp.now(),
+        unreadCount: 0,
+      };
+
+      const conversationsRef = collection(db, 'conversations');
+      const conversationDoc = await addDoc(conversationsRef, conversationData);
+      console.log('Created conversation:', conversationDoc.id);
 
       if (addNotification) {
         addNotification({
@@ -375,12 +370,15 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         });
       }
 
-      await conversationsQuery.refetch();
+      await loadBounties();
+      await loadAcceptedBounties();
+      await loadConversations();
       console.log('Applied to bounty:', bountyId, 'Hunters needed:', huntersNeeded);
     } catch (error) {
       console.error('Error accepting bounty:', error);
+      throw error;
     }
-  }, [bounties, myAppliedBounties, currentUser, acceptBountyMutation, createConversationMutation, sendMessageMutation, conversationsQuery, addNotification]);
+  }, [bounties, myAppliedBounties, currentUser, addNotification, loadBounties, loadAcceptedBounties, loadConversations]);
 
   const updateBountyStatus = useCallback((bountyId: string, status: Bounty['status']) => {
     const updatedBounties = bounties.map(b =>
@@ -653,7 +651,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     conversations,
     messages,
     reviews,
-    isLoading: isLoading || (user ? (bountiesQuery.isLoading && !bountiesQuery.data) : false),
+    isLoading: isLoading,
     addBounty,
     applyToBounty,
     updateBountyStatus,
@@ -679,8 +677,6 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     reviews,
     isLoading,
     user,
-    bountiesQuery.isLoading,
-    bountiesQuery.data,
     currentUser,
     addBounty,
     applyToBounty,
