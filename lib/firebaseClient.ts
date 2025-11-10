@@ -11,22 +11,37 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
+console.log('🔧 Firebase Config Check:');
+console.log('  API Key:', firebaseConfig.apiKey ? '✓ Set' : '❌ MISSING');
+console.log('  Auth Domain:', firebaseConfig.authDomain ? '✓ Set' : '❌ MISSING');
+console.log('  Project ID:', firebaseConfig.projectId ? '✓ Set' : '❌ MISSING');
+console.log('  Storage Bucket:', firebaseConfig.storageBucket ? '✓ Set' : '❌ MISSING');
+console.log('  Messaging Sender ID:', firebaseConfig.messagingSenderId ? '✓ Set' : '❌ MISSING');
+console.log('  App ID:', firebaseConfig.appId ? '✓ Set' : '❌ MISSING');
+
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 
 export const initializeFirebase = () => {
-  if (getApps().length === 0) {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    console.log('Firebase initialized');
-  } else {
-    app = getApps()[0];
-    auth = getAuth(app);
-    db = getFirestore(app);
+  try {
+    if (getApps().length === 0) {
+      console.log('🔥 Initializing Firebase...');
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+      console.log('✅ Firebase initialized successfully');
+    } else {
+      app = getApps()[0];
+      auth = getAuth(app);
+      db = getFirestore(app);
+      console.log('✅ Firebase already initialized');
+    }
+    return { app, auth, db };
+  } catch (error: any) {
+    console.error('❌ Firebase initialization failed:', error.message);
+    throw error;
   }
-  return { app, auth, db };
 };
 
 export const getFirebaseAuth = () => {
