@@ -47,10 +47,20 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
   const bountiesQuery = trpc.bounties.list.useQuery(undefined, {
     enabled: !!user,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
   
   const myBountiesQuery = trpc.bounties.myBounties.useQuery(undefined, {
     enabled: !!user,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+  });
+
+  const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
+    enabled: !!user,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
 
   const createBountyMutation = trpc.bounties.create.useMutation({
@@ -60,17 +70,45 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     },
   });
 
+  const acceptBountyMutation = trpc.bounties.accept.useMutation();
+  const createConversationMutation = trpc.conversations.create.useMutation({
+    onSuccess: () => {
+      conversationsQuery.refetch();
+    },
+  });
+  const sendMessageMutation = trpc.conversations.sendMessage.useMutation();
+
   useEffect(() => {
     if (bountiesQuery.data) {
+      console.log('Setting bounties from backend:', bountiesQuery.data.length);
       setBounties(bountiesQuery.data as Bounty[]);
+      setIsLoading(false);
+    } else if (!user) {
+      setIsLoading(false);
     }
-  }, [bountiesQuery.data]);
+  }, [bountiesQuery.data, user]);
 
   useEffect(() => {
     if (myBountiesQuery.data) {
+      console.log('Setting my bounties from backend:', myBountiesQuery.data.length);
       setMyPostedBounties(myBountiesQuery.data as Bounty[]);
     }
   }, [myBountiesQuery.data]);
+
+  useEffect(() => {
+    if (conversationsQuery.data) {
+      console.log('Setting conversations from backend:', conversationsQuery.data.length);
+      const mergedConversations = [
+        ...(conversationsQuery.data as Conversation[]),
+        ...conversations.filter(c => 
+          !(conversationsQuery.data as Conversation[]).find(bc => bc.id === c.id)
+        )
+      ];
+      setConversations(mergedConversations);
+    } else if (conversations.length === 0) {
+      setConversations(mockConversations);
+    }
+  }, [conversationsQuery.data]);
 
   useEffect(() => {
     loadData();
@@ -78,29 +116,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
   const loadData = async () => {
     try {
-      const [storedBounties, storedMyBounties, storedApplied, storedAccepted, storedReviews] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.BOUNTIES),
-        AsyncStorage.getItem(STORAGE_KEYS.MY_BOUNTIES),
+      const [storedApplied, storedAccepted, storedReviews] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.APPLIED_BOUNTIES),
         AsyncStorage.getItem(STORAGE_KEYS.ACCEPTED_BOUNTIES),
         AsyncStorage.getItem(STORAGE_KEYS.REVIEWS),
       ]);
-
-      if (storedBounties) {
-        const parsed = JSON.parse(storedBounties);
-        setBounties(parsed.map((b: Bounty) => ({
-          ...b,
-          createdAt: new Date(b.createdAt),
-        })));
-      }
-
-      if (storedMyBounties) {
-        const parsed = JSON.parse(storedMyBounties);
-        setMyPostedBounties(parsed.map((b: Bounty) => ({
-          ...b,
-          createdAt: new Date(b.createdAt),
-        })));
-      }
 
       if (storedApplied) {
         setMyAppliedBounties(JSON.parse(storedApplied));
@@ -119,8 +139,6 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       }
     } catch (error) {
       console.error('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -203,7 +221,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     console.log('Review added:', newReview);
   }, [reviews, addNotification]);
 
-  const applyToBounty = useCallback((bountyId: string) => {
+  const applyToBounty = useCallback(async (bountyId: string) => {
     if (myAppliedBounties.includes(bountyId)) {
       console.log('Already applied to this bounty');
       return;
@@ -227,74 +245,68 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     );
     setBounties(updatedBounties);
 
-    const huntersNeeded = bounty.huntersNeeded || 1;
-    const acceptedHunters = bounty.acceptedHunters || [];
-    const allHunters = [...acceptedHunters, currentUser.id];
+    try {
+      await acceptBountyMutation.mutateAsync({ bountyId });
 
-    const newDirectConvId = `conv-direct-${Date.now()}`;
-    const participants = [
-      {
-        id: bounty.postedBy,
-        name: bounty.postedByName,
-        avatar: bounty.postedByAvatar,
-        role: 'poster' as const,
-      },
-      ...allHunters.map(hunterId => ({
-        id: hunterId,
-        name: hunterId === currentUser.id ? currentUser.name : 'Hunter',
-        avatar: hunterId === currentUser.id ? currentUser.avatar : 'https://i.pravatar.cc/150',
-        role: 'hunter' as const,
-      })),
-    ];
+      const huntersNeeded = bounty.huntersNeeded || 1;
+      const acceptedHunters = bounty.acceptedHunters || [];
+      const allHunters = [...acceptedHunters, currentUser.id];
 
-    const newDirectConversation: Conversation = {
-      id: newDirectConvId,
-      type: 'direct',
-      participantId: bounty.postedBy,
-      participantName: bounty.postedByName,
-      participantAvatar: bounty.postedByAvatar,
-      participants: huntersNeeded > 1 ? participants : undefined,
-      lastMessage: 'You accepted this bounty!',
-      lastMessageTime: new Date(),
-      unreadCount: 0,
-      bountyId: bounty.id,
-      bountyTitle: bounty.title,
-      originalReward: bounty.reward,
-    };
+      const participants = [
+        {
+          id: bounty.postedBy,
+          name: bounty.postedByName,
+          avatar: bounty.postedByAvatar,
+          role: 'poster' as const,
+        },
+        ...allHunters.map(hunterId => ({
+          id: hunterId,
+          name: hunterId === currentUser.id ? currentUser.name : 'Hunter',
+          avatar: hunterId === currentUser.id ? currentUser.avatar : 'https://i.pravatar.cc/150',
+          role: 'hunter' as const,
+        })),
+      ];
 
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: newDirectConvId,
-      senderId: 'system',
-      senderName: 'System',
-      senderAvatar: '',
-      content: huntersNeeded > 1 
-        ? `You accepted the bounty "${bounty.title}" for ${bounty.reward}. This bounty needs ${huntersNeeded} hunters. Good luck!`
-        : `You accepted the bounty "${bounty.title}" for ${bounty.reward}. Good luck!`,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    setConversations(prev => [newDirectConversation, ...prev]);
-    setMessages(prev => ({
-      ...prev,
-      [newDirectConvId]: [initialMessage],
-    }));
-
-    if (addNotification) {
-      addNotification({
-        userId: bounty.postedBy,
-        type: 'bounty-accepted',
-        title: 'Bounty Accepted!',
-        message: `${currentUser.name} accepted your bounty: "${bounty.title}"`,
-        relatedId: bountyId,
+      const result = await createConversationMutation.mutateAsync({
+        type: 'direct',
+        participantId: bounty.postedBy,
+        participantName: bounty.postedByName,
+        participantAvatar: bounty.postedByAvatar,
+        participants: huntersNeeded > 1 ? participants : undefined,
+        bountyId: bounty.id,
+        bountyTitle: bounty.title,
+        originalReward: bounty.reward,
       });
+
+      await sendMessageMutation.mutateAsync({
+        conversationId: result.id,
+        content: huntersNeeded > 1 
+          ? `You accepted the bounty "${bounty.title}" for ${bounty.reward}. This bounty needs ${huntersNeeded} hunters. Good luck!`
+          : `You accepted the bounty "${bounty.title}" for ${bounty.reward}. Good luck!`,
+        type: 'text',
+      });
+
+      if (addNotification) {
+        addNotification({
+          userId: bounty.postedBy,
+          type: 'bounty-accepted',
+          title: 'Bounty Accepted!',
+          message: `${currentUser.name} accepted your bounty: "${bounty.title}"`,
+          relatedId: bountyId,
+        });
+      }
+
+      await conversationsQuery.refetch();
+      console.log('Applied to bounty:', bountyId, 'Hunters needed:', huntersNeeded);
+    } catch (error) {
+      console.error('Error accepting bounty:', error);
+      setMyAppliedBounties(myAppliedBounties);
+      setAcceptedBounties(acceptedBounties);
+      setBounties(bounties);
     }
 
     saveData(updatedBounties, undefined, updatedApplied, updatedAccepted);
-    console.log('Applied to bounty:', bountyId, 'Hunters needed:', huntersNeeded);
-  }, [bounties, myAppliedBounties, acceptedBounties, currentUser]);
+  }, [bounties, myAppliedBounties, acceptedBounties, currentUser, acceptBountyMutation, createConversationMutation, sendMessageMutation, conversationsQuery]);
 
   const updateBountyStatus = useCallback((bountyId: string, status: Bounty['status']) => {
     const updatedBounties = bounties.map(b =>
@@ -566,7 +578,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     conversations,
     messages,
     reviews,
-    isLoading: bountiesQuery.isLoading || myBountiesQuery.isLoading,
+    isLoading: isLoading || (user ? (bountiesQuery.isLoading && !bountiesQuery.data) : false),
     addBounty,
     applyToBounty,
     updateBountyStatus,
