@@ -93,12 +93,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.log('============================================');
       console.log('MUTATION ERROR CALLBACK');
       console.log('============================================');
-      console.error('Mutation error:', {
-        message: error.message,
-        data: error.data,
-        shape: error.shape,
-        fullError: error
-      });
+      console.error('Mutation error:', error);
+      console.error('Error message:', error?.message);
+      console.error('Error data:', error?.data);
+      console.error('Error shape:', error?.shape);
+      console.error('Error stringified:', JSON.stringify(error, null, 2));
     },
   });
 
@@ -279,11 +278,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.log('============================================');
       console.log('✗ ERROR in addBounty()');
       console.log('============================================');
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        fullError: error
-      });
+      console.error('Error:', error);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
+      console.error('Error data:', error?.data);
+      console.error('Error stringified:', JSON.stringify(error, null, 2));
       throw error;
     }
   }, [createBountyMutation]);

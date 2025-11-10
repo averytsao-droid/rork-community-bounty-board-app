@@ -149,12 +149,19 @@ export default function PostBountyScreen() {
       console.log('============================================');
       console.log('BOUNTY POST FAILED!');
       console.log('============================================');
-      console.error('Error in handleSubmit:', {
-        message: error.message,
-        stack: error.stack,
-        fullError: error
-      });
-      Alert.alert('Error', error.message || 'Failed to create bounty. Please try again.');
+      console.error('Error in handleSubmit:', error);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
+      console.error('Error stringified:', JSON.stringify(error, null, 2));
+      
+      let errorMessage = 'Failed to create bounty. Please try again.';
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      Alert.alert('Error', errorMessage);
     }
   };
 
