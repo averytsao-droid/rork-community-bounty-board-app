@@ -77,11 +77,27 @@ export const createBountyProcedure = publicProcedure
       console.log('BOUNTY CREATION SUCCESSFUL!');
       console.log('============================================');
       
-      return {
+      const createdBounty = {
         id: docRef.id,
-        ...bountyData,
+        title: bountyData.title,
+        description: bountyData.description,
+        category: bountyData.category,
+        reward: bountyData.reward,
+        status: bountyData.status,
+        duration: bountyData.duration,
+        tags: bountyData.tags,
+        huntersNeeded: bountyData.huntersNeeded,
+        acceptedHunters: bountyData.acceptedHunters,
+        postedBy: bountyData.postedBy,
+        postedByName: currentUser.displayName || currentUser.email || 'Anonymous',
+        postedByAvatar: currentUser.photoURL || 'https://i.pravatar.cc/150?img=1',
         createdAt: new Date(),
+        applicants: bountyData.applicants,
       };
+      
+      console.log('[Step 7] Returning bounty data:', JSON.stringify(createdBounty, null, 2));
+      
+      return createdBounty;
     } catch (error: any) {
       console.log('============================================');
       console.log('BOUNTY CREATION FAILED!');
