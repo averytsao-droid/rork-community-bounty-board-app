@@ -14,11 +14,11 @@ import { categoryLabels, categoryColors } from '@/mocks/bounties';
 import { Bounty } from '@/types';
 
 export default function MyBountiesScreen() {
-  const { myPostedBounties, bounties, myAppliedBounties, updateBountyStatus, cancelBounty, deleteBounty } = useBountyContext();
+  const { myPostedBounties, acceptedBountiesList, updateBountyStatus, cancelBounty, deleteBounty } = useBountyContext();
   const [activeTab, setActiveTab] = useState<'posted' | 'accepted'>('posted');
   const [expandedBountyId, setExpandedBountyId] = useState<string | null>(null);
 
-  const appliedBountiesList = bounties.filter(b => myAppliedBounties.includes(b.id));
+
 
   const formatDate = (date: Date) => {
     const now = new Date();
@@ -200,7 +200,7 @@ export default function MyBountiesScreen() {
           <Text
             style={[styles.tabText, activeTab === 'accepted' && styles.tabTextActive]}
           >
-            Accepted ({appliedBountiesList.length})
+            Accepted ({acceptedBountiesList.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -238,7 +238,7 @@ export default function MyBountiesScreen() {
             myPostedBounties.map(b => renderBountyCard(b, true))
           )
         ) : (
-          appliedBountiesList.length === 0 ? (
+          acceptedBountiesList.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No accepted bounties</Text>
               <Text style={styles.emptySubtext}>
@@ -246,7 +246,7 @@ export default function MyBountiesScreen() {
               </Text>
             </View>
           ) : (
-            appliedBountiesList.map(b => renderBountyCard(b, false))
+            acceptedBountiesList.map(b => renderBountyCard(b, false))
           )
         )}
       </ScrollView>
