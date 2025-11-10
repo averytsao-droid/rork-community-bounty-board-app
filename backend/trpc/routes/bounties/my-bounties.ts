@@ -1,6 +1,6 @@
 import { publicProcedure } from '../../create-context';
 import { getFirebaseAuth, getFirebaseFirestore } from '@/lib/firebaseClient';
-import { collection, query, where, getDocs, doc, getDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 
 export const myBountiesProcedure = publicProcedure.query(async () => {
   try {
@@ -15,12 +15,11 @@ export const myBountiesProcedure = publicProcedure.query(async () => {
     const bountiesRef = collection(db, 'bounties');
     const q = query(
       bountiesRef,
-      where('postedBy', '==', currentUser.uid),
-      orderBy('createdAt', 'desc')
+      where('postedBy', '==', currentUser.uid)
     );
     const querySnapshot = await getDocs(q);
 
-    const bounties = await Promise.all(
+    let bounties = await Promise.all(
       querySnapshot.docs.map(async (bountyDoc) => {
         const bountyData = bountyDoc.data();
         
@@ -47,6 +46,8 @@ export const myBountiesProcedure = publicProcedure.query(async () => {
       })
     );
 
+    bounties.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
     console.log('My bounties:', bounties.length);
     return bounties;
   } catch (error: any) {
