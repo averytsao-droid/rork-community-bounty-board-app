@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { ChevronDown, DollarSign, Clock, Tag, Users, Share2 } from 'lucide-react-native';
+import { ChevronDown, DollarSign, Clock, Tag, Users, Share2, RotateCcw } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { bountyTemplates, categoryLabels, durationLabels } from '@/mocks/bounties';
 import { BountyCategory, BountyTemplate, TimeDuration } from '@/types';
@@ -41,6 +41,34 @@ export default function PostBountyScreen() {
     setCategory(template.category);
     setTags(template.tags.join(', '));
     setShowTemplates(false);
+  };
+
+  const handleClear = () => {
+    Alert.alert(
+      'Clear Form',
+      'Are you sure you want to clear all fields?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            setTitle('');
+            setDescription('');
+            setReward('');
+            setDuration('short');
+            setTags('');
+            setCategory(null);
+            setSelectedTemplate(null);
+            setHuntersNeeded('1');
+            setPostToFizz(false);
+          }
+        }
+      ]
+    );
   };
 
   const handleSubmit = async () => {
@@ -385,9 +413,15 @@ export default function PostBountyScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Post Bounty</Text>
-        </TouchableOpacity>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity style={styles.clearButton} onPress={handleClear}>
+            <RotateCcw size={20} color="#6B7280" />
+            <Text style={styles.clearButtonText}>Clear</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+            <Text style={styles.submitButtonText}>Post Bounty</Text>
+          </TouchableOpacity>
+        </View>
         </ScrollView>
       </View>
   );
@@ -521,13 +555,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#374151',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 32,
+  },
+  clearButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  clearButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#6B7280',
+  },
   submitButton: {
+    flex: 2,
     backgroundColor: '#8B5CF6',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 32,
   },
   submitButtonText: {
     fontSize: 16,
