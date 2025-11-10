@@ -16,8 +16,11 @@ const STORAGE_KEYS = {
 };
 
 export const [BountyProvider, useBountyContext] = createContextHook(() => {
-  const { user, addNotification } = useAuth();
-  const currentUser = user ? {
+  const authContext = useAuth();
+  const user = authContext?.user ?? null;
+  const addNotification = authContext?.addNotification;
+  
+  const currentUser = useMemo(() => user ? {
     ...user,
     credits: user.credits ?? 1000,
     totalEarned: user.totalEarned ?? 0,
@@ -35,7 +38,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     rating: 0,
     joinedDate: new Date(),
     credits: 1000,
-  };
+  }, [user]);
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
   const [myAppliedBounties, setMyAppliedBounties] = useState<string[]>([]);
@@ -108,7 +111,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     } else if (conversations.length === 0) {
       setConversations(mockConversations);
     }
-  }, [conversationsQuery.data]);
+  }, [conversationsQuery.data, conversations]);
 
   useEffect(() => {
     loadData();
@@ -306,7 +309,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
 
     saveData(updatedBounties, undefined, updatedApplied, updatedAccepted);
-  }, [bounties, myAppliedBounties, acceptedBounties, currentUser, acceptBountyMutation, createConversationMutation, sendMessageMutation, conversationsQuery]);
+  }, [bounties, myAppliedBounties, acceptedBounties, currentUser, acceptBountyMutation, createConversationMutation, sendMessageMutation, conversationsQuery, addNotification]);
 
   const updateBountyStatus = useCallback((bountyId: string, status: Bounty['status']) => {
     const updatedBounties = bounties.map(b =>
@@ -350,7 +353,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     setConversations(updatedConversations);
 
     console.log('Message sent:', newMessage);
-  }, [messages, conversations]);
+  }, [messages, conversations, currentUser]);
 
   const sendPayRequest = useCallback((conversationId: string, amount: number) => {
     const newMessage: Message = {
@@ -377,13 +380,13 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
     const updatedConversations = conversations.map(c =>
       c.id === conversationId
-        ? { ...c, lastMessage: `Pay request: $${amount}`, lastMessageTime: new Date() }
+        ? { ...c, lastMessage: `Pay request: ${amount}`, lastMessageTime: new Date() }
         : c
     );
     setConversations(updatedConversations);
 
     console.log('Pay request sent:', newMessage);
-  }, [messages, conversations]);
+  }, [messages, conversations, currentUser]);
 
   const acceptPayRequest = useCallback((conversationId: string, messageId: string) => {
     const conversation = conversations.find(c => c.id === conversationId);
@@ -453,7 +456,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
       console.log('Pay request accepted, created direct conversation:', newDirectConvId);
     }
-  }, [conversations, messages]);
+  }, [conversations, messages, currentUser.id]);
 
   const markConversationAsRead = useCallback((conversationId: string) => {
     const updatedConversations = conversations.map(c =>
@@ -515,7 +518,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       senderId: 'system',
       senderName: 'System',
       senderAvatar: '',
-      content: `Negotiation started for "${bounty.title}". Original offer: $${bounty.reward}`,
+      content: `Negotiation started for "${bounty.title}". Original offer: ${bounty.reward}`,
       timestamp: new Date(),
       read: true,
       type: 'text',
@@ -528,7 +531,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }));
 
     console.log('Started negotiation for bounty:', bountyId);
-  }, [bounties, conversations]);
+  }, [bounties, conversations, currentUser]);
 
   const cancelBounty = useCallback((bountyId: string) => {
     const updatedAccepted = acceptedBounties.filter(id => id !== bountyId);
@@ -601,8 +604,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     conversations,
     messages,
     reviews,
+    isLoading,
+    user,
     bountiesQuery.isLoading,
-    myBountiesQuery.isLoading,
+    bountiesQuery.data,
+    currentUser,
     addBounty,
     applyToBounty,
     updateBountyStatus,
@@ -614,8 +620,6 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     cancelBounty,
     deleteBounty,
     addReview,
-    setConversations,
-    setMessages,
   ]);
 });
 
