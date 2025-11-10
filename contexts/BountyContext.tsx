@@ -17,9 +17,19 @@ const STORAGE_KEYS = {
 
 export const [BountyProvider, useBountyContext] = createContextHook(() => {
   const authContext = useAuth();
-  const user = authContext?.user ?? null;
-  const addNotification = authContext?.addNotification;
+  const user = authContext.user ?? null;
+  const addNotification = authContext.addNotification;
   
+  const [bounties, setBounties] = useState<Bounty[]>([]);
+  const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
+  const [myAppliedBounties, setMyAppliedBounties] = useState<string[]>([]);
+  const [acceptedBounties, setAcceptedBounties] = useState<string[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [conversationsInitialized, setConversationsInitialized] = useState(false);
+
   const currentUser = useMemo(() => user ? {
     ...user,
     credits: user.credits ?? 1000,
@@ -39,14 +49,6 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     joinedDate: new Date(),
     credits: 1000,
   }, [user]);
-  const [bounties, setBounties] = useState<Bounty[]>([]);
-  const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
-  const [myAppliedBounties, setMyAppliedBounties] = useState<string[]>([]);
-  const [acceptedBounties, setAcceptedBounties] = useState<string[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(mockMessages);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   const bountiesQuery = trpc.bounties.list.useQuery(undefined, {
     enabled: !!user,
@@ -101,17 +103,14 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   useEffect(() => {
     if (conversationsQuery.data) {
       console.log('Setting conversations from backend:', conversationsQuery.data.length);
-      const mergedConversations = [
-        ...(conversationsQuery.data as Conversation[]),
-        ...conversations.filter(c => 
-          !(conversationsQuery.data as Conversation[]).find(bc => bc.id === c.id)
-        )
-      ];
-      setConversations(mergedConversations);
-    } else if (conversations.length === 0) {
+      setConversations(conversationsQuery.data as Conversation[]);
+      setConversationsInitialized(true);
+    } else if (!conversationsInitialized && !user) {
       setConversations(mockConversations);
+      setMessages(mockMessages);
+      setConversationsInitialized(true);
     }
-  }, [conversationsQuery.data, conversations]);
+  }, [conversationsQuery.data, conversationsInitialized, user]);
 
   useEffect(() => {
     loadData();
