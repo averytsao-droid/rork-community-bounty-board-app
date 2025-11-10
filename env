@@ -1,5 +1,6 @@
 # Backend API URL
 # This tells the frontend where to find the backend server
+# For Rork projects, the backend runs on the same domain as the frontend
 EXPO_PUBLIC_RORK_API_BASE_URL=https://u7yl10fgtazotkaa17vqs.rork.app
 
 # Firebase Configuration
