@@ -145,6 +145,32 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [user]);
 
+  const loadMessagesForConversation = useCallback(async (conversationId: string) => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const messagesRef = collection(db, 'messages');
+      const q = query(
+        messagesRef,
+        where('conversationId', '==', conversationId),
+        orderBy('timestamp', 'asc')
+      );
+      const snapshot = await getDocs(q);
+      const loadedMessages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate() || new Date(),
+      })) as Message[];
+      console.log('Loaded messages from Firebase:', conversationId, loadedMessages.length);
+      setMessages(prev => ({
+        ...prev,
+        [conversationId]: loadedMessages,
+      }));
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       setIsLoading(true);
@@ -395,137 +421,198 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     console.log('Bounty status updated:', bountyId, status);
   }, [bounties, myPostedBounties]);
 
-  const sendMessage = useCallback((conversationId: string, content: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      conversationId,
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      content,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    const updatedMessages = {
-      ...messages,
-      [conversationId]: [...(messages[conversationId] || []), newMessage],
-    };
-    setMessages(updatedMessages);
-
-    const updatedConversations = conversations.map(c =>
-      c.id === conversationId
-        ? { ...c, lastMessage: content, lastMessageTime: new Date() }
-        : c
-    );
-    setConversations(updatedConversations);
-
-    console.log('Message sent:', newMessage);
-  }, [messages, conversations, currentUser]);
-
-  const sendPayRequest = useCallback((conversationId: string, amount: number) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      conversationId,
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      content: '',
-      timestamp: new Date(),
-      read: true,
-      type: 'pay-request',
-      payRequest: {
-        amount,
-        status: 'pending',
-      },
-    };
-
-    const updatedMessages = {
-      ...messages,
-      [conversationId]: [...(messages[conversationId] || []), newMessage],
-    };
-    setMessages(updatedMessages);
-
-    const updatedConversations = conversations.map(c =>
-      c.id === conversationId
-        ? { ...c, lastMessage: `Pay request: ${amount}`, lastMessageTime: new Date() }
-        : c
-    );
-    setConversations(updatedConversations);
-
-    console.log('Pay request sent:', newMessage);
-  }, [messages, conversations, currentUser]);
-
-  const acceptPayRequest = useCallback((conversationId: string, messageId: string) => {
-    const conversation = conversations.find(c => c.id === conversationId);
-    if (!conversation) return;
-
-    const updatedMessages = {
-      ...messages,
-      [conversationId]: messages[conversationId].map(m =>
-        m.id === messageId && m.payRequest
-          ? {
-              ...m,
-              payRequest: {
-                ...m.payRequest,
-                status: 'accepted' as const,
-                acceptedBy: currentUser.id,
-              },
-            }
-          : m
-      ),
-    };
-    setMessages(updatedMessages);
-
-    const acceptedMessage = messages[conversationId].find(m => m.id === messageId);
-    if (!acceptedMessage) return;
-
-    const newDirectConvId = `conv-direct-${Date.now()}`;
-    const otherParticipant = conversation.participants?.find(
-      p => p.id === acceptedMessage.senderId
-    );
-
-    if (otherParticipant) {
-      const newDirectConversation: Conversation = {
-        id: newDirectConvId,
-        type: 'direct',
-        participantId: otherParticipant.id,
-        participantName: otherParticipant.name,
-        participantAvatar: otherParticipant.avatar,
-        lastMessage: 'Pay request accepted! Let\'s get started.',
-        lastMessageTime: new Date(),
-        unreadCount: 0,
-        bountyId: conversation.bountyId,
-        bountyTitle: conversation.bountyTitle,
-        originalReward: acceptedMessage.payRequest?.amount || conversation.originalReward,
-      };
-
-      const initialMessage: Message = {
-        id: Date.now().toString(),
-        conversationId: newDirectConvId,
-        senderId: 'system',
-        senderName: 'System',
-        senderAvatar: '',
-        content: `Pay request of $${acceptedMessage.payRequest?.amount} accepted! The bounty is now assigned.`,
-        timestamp: new Date(),
-        read: true,
+  const sendMessage = useCallback(async (conversationId: string, content: string) => {
+    try {
+      const db = getFirebaseFirestore();
+      
+      const messageData = {
+        conversationId,
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        senderAvatar: currentUser.avatar,
+        content,
+        timestamp: Timestamp.now(),
+        read: false,
         type: 'text',
       };
 
-      setConversations(prev => [
-        newDirectConversation,
-        ...prev.filter(c => c.id !== conversationId),
-      ]);
+      const docRef = await addDoc(collection(db, 'messages'), messageData);
 
-      setMessages(prev => ({
-        ...prev,
-        [newDirectConvId]: [initialMessage],
-      }));
+      await updateDoc(doc(db, 'conversations', conversationId), {
+        lastMessage: content,
+        lastMessageTime: Timestamp.now(),
+      });
 
-      console.log('Pay request accepted, created direct conversation:', newDirectConvId);
+      const newMessage: Message = {
+        id: docRef.id,
+        ...messageData,
+        timestamp: new Date(),
+      };
+
+      const updatedMessages = {
+        ...messages,
+        [conversationId]: [...(messages[conversationId] || []), newMessage],
+      };
+      setMessages(updatedMessages);
+
+      const updatedConversations = conversations.map(c =>
+        c.id === conversationId
+          ? { ...c, lastMessage: content, lastMessageTime: new Date() }
+          : c
+      );
+      setConversations(updatedConversations);
+
+      console.log('Message sent to Firebase:', docRef.id);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      throw error;
     }
-  }, [conversations, messages, currentUser.id]);
+  }, [messages, conversations, currentUser]);
+
+  const sendPayRequest = useCallback(async (conversationId: string, amount: number) => {
+    try {
+      const db = getFirebaseFirestore();
+      
+      const messageData = {
+        conversationId,
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        senderAvatar: currentUser.avatar,
+        content: '',
+        timestamp: Timestamp.now(),
+        read: false,
+        type: 'pay-request',
+        payRequest: {
+          amount,
+          status: 'pending',
+        },
+      };
+
+      const docRef = await addDoc(collection(db, 'messages'), messageData);
+
+      await updateDoc(doc(db, 'conversations', conversationId), {
+        lastMessage: `Pay request: ${amount}`,
+        lastMessageTime: Timestamp.now(),
+      });
+
+      const newMessage: Message = {
+        id: docRef.id,
+        ...messageData,
+        timestamp: new Date(),
+      };
+
+      const updatedMessages = {
+        ...messages,
+        [conversationId]: [...(messages[conversationId] || []), newMessage],
+      };
+      setMessages(updatedMessages);
+
+      const updatedConversations = conversations.map(c =>
+        c.id === conversationId
+          ? { ...c, lastMessage: `Pay request: ${amount}`, lastMessageTime: new Date() }
+          : c
+      );
+      setConversations(updatedConversations);
+
+      console.log('Pay request sent to Firebase:', docRef.id);
+    } catch (error) {
+      console.error('Error sending pay request:', error);
+      throw error;
+    }
+  }, [messages, conversations, currentUser]);
+
+  const acceptPayRequest = useCallback(async (conversationId: string, messageId: string) => {
+    const conversation = conversations.find(c => c.id === conversationId);
+    if (!conversation) return;
+
+    const acceptedMessage = messages[conversationId]?.find(m => m.id === messageId);
+    if (!acceptedMessage || !acceptedMessage.payRequest) return;
+
+    try {
+      const db = getFirebaseFirestore();
+
+      await updateDoc(doc(db, 'messages', messageId), {
+        'payRequest.status': 'accepted',
+        'payRequest.acceptedBy': currentUser.id,
+      });
+
+      const updatedMessages = {
+        ...messages,
+        [conversationId]: messages[conversationId].map(m =>
+          m.id === messageId && m.payRequest
+            ? {
+                ...m,
+                payRequest: {
+                  ...m.payRequest,
+                  status: 'accepted' as const,
+                  acceptedBy: currentUser.id,
+                },
+              }
+            : m
+        ),
+      };
+      setMessages(updatedMessages);
+
+      const otherParticipant = conversation.participants?.find(
+        p => p.id === acceptedMessage.senderId
+      );
+
+      if (otherParticipant) {
+        const newDirectConversationData = {
+          type: 'direct',
+          participantId: otherParticipant.id,
+          participantName: otherParticipant.name,
+          participantAvatar: otherParticipant.avatar,
+          participantIds: [currentUser.id, otherParticipant.id],
+          lastMessage: 'Pay request accepted! Let\'s get started.',
+          lastMessageTime: Timestamp.now(),
+          unreadCount: 0,
+          bountyId: conversation.bountyId,
+          bountyTitle: conversation.bountyTitle,
+          originalReward: acceptedMessage.payRequest.amount || conversation.originalReward,
+        };
+
+        const newConvRef = await addDoc(collection(db, 'conversations'), newDirectConversationData);
+
+        const initialMessageData = {
+          conversationId: newConvRef.id,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `Pay request of ${acceptedMessage.payRequest.amount} accepted! The bounty is now assigned.`,
+          timestamp: Timestamp.now(),
+          read: true,
+          type: 'text',
+        };
+
+        const initialMsgRef = await addDoc(collection(db, 'messages'), initialMessageData);
+
+        const newDirectConversation: Conversation = {
+          id: newConvRef.id,
+          ...newDirectConversationData,
+          lastMessageTime: new Date(),
+        };
+
+        const initialMessage: Message = {
+          id: initialMsgRef.id,
+          ...initialMessageData,
+          timestamp: new Date(),
+        };
+
+        await loadConversations();
+
+        setMessages(prev => ({
+          ...prev,
+          [newConvRef.id]: [initialMessage],
+        }));
+
+        console.log('Pay request accepted, created direct conversation:', newConvRef.id);
+      }
+    } catch (error) {
+      console.error('Error accepting pay request:', error);
+      throw error;
+    }
+  }, [conversations, messages, currentUser, loadConversations]);
 
   const markConversationAsRead = useCallback((conversationId: string) => {
     const updatedConversations = conversations.map(c =>
@@ -666,6 +753,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     currentUser,
     setConversations,
     setMessages,
+    loadMessagesForConversation,
   }), [
     bounties,
     myPostedBounties,
@@ -689,6 +777,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     cancelBounty,
     deleteBounty,
     addReview,
+    loadMessagesForConversation,
   ]);
 });
 

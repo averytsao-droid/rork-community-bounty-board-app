@@ -19,7 +19,7 @@ import { Conversation, ConversationType, Message } from '@/types';
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages } = useBountyContext();
+  const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages, loadMessagesForConversation } = useBountyContext();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
   const [selectedTab, setSelectedTab] = useState<ConversationType>('direct');
@@ -49,9 +49,10 @@ export default function MessagesScreen() {
     return date.toLocaleDateString();
   };
 
-  const handleConversationSelect = (conversation: Conversation) => {
+  const handleConversationSelect = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
     markConversationAsRead(conversation.id);
+    await loadMessagesForConversation(conversation.id);
   };
 
   const handleSendMessage = () => {
