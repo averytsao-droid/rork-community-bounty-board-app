@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trpcClient } from '@/lib/trpc';
 import { Bounty, Conversation, Message, Review } from '@/types';
 import { mockBounties } from '@/mocks/bounties';
 import { mockConversations, mockMessages } from '@/mocks/messages';
@@ -710,23 +711,24 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [bounties, conversations, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
 
-  const cancelBounty = useCallback((bountyId: string) => {
-    const updatedAccepted = acceptedBounties.filter(id => id !== bountyId);
-    setAcceptedBounties(updatedAccepted);
-
-    const updatedApplied = myAppliedBounties.filter(id => id !== bountyId);
-    setMyAppliedBounties(updatedApplied);
-
-    const directConv = conversations.find(
-      c => c.bountyId === bountyId && c.type === 'direct'
-    );
-    if (directConv) {
-      setConversations(prev => prev.filter(c => c.id !== directConv.id));
+  const cancelBounty = useCallback(async (bountyId: string) => {
+    try {
+      console.log('Cancelling accepted bounty:', bountyId);
+      
+      await trpcClient.bounties.cancelAccepted.mutate({ bountyId });
+      
+      await Promise.all([
+        loadBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]);
+      
+      console.log('Bounty cancelled successfully:', bountyId);
+    } catch (error) {
+      console.error('Error cancelling bounty:', error);
+      throw error;
     }
-
-    saveData(undefined, undefined, updatedApplied, updatedAccepted);
-    console.log('Bounty cancelled:', bountyId);
-  }, [acceptedBounties, myAppliedBounties, conversations]);
+  }, [loadBounties, loadAcceptedBounties, loadConversations]);
 
   const deleteBounty = useCallback((bountyId: string) => {
     const updatedBounties = bounties.filter(b => b.id !== bountyId);

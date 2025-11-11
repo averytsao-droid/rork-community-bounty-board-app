@@ -163,7 +163,13 @@ export default function MyBountiesScreen() {
         <View style={styles.actionsContainer}>
           <TouchableOpacity
             style={[styles.actionButton, styles.actionButtonDanger]}
-            onPress={() => cancelBounty(bounty.id)}
+            onPress={async () => {
+              try {
+                await cancelBounty(bounty.id);
+              } catch (error) {
+                console.error('Error cancelling bounty:', error);
+              }
+            }}
           >
             <XCircle size={16} color="#EF4444" />
             <Text style={[styles.actionButtonText, styles.actionButtonTextDanger]}>
