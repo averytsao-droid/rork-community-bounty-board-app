@@ -629,7 +629,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [conversations, messages]);
 
-  const startNegotiation = useCallback((bountyId: string) => {
+  const startNegotiation = useCallback(async (bountyId: string) => {
     const bounty = bounties.find(b => b.id === bountyId);
     if (!bounty) return;
 
@@ -642,52 +642,73 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       return;
     }
 
-    const newNegotiationConvId = `conv-negotiation-${Date.now()}`;
-    const newNegotiationConversation: Conversation = {
-      id: newNegotiationConvId,
-      type: 'hunter-negotiation',
-      participants: [
+    try {
+      const db = getFirebaseFirestore();
+
+      const participants = [
         {
           id: bounty.postedBy,
           name: bounty.postedByName,
           avatar: bounty.postedByAvatar,
-          role: 'poster',
+          role: 'poster' as const,
         },
         {
           id: currentUser.id,
           name: currentUser.name,
           avatar: currentUser.avatar,
-          role: 'hunter',
+          role: 'hunter' as const,
         },
-      ],
-      lastMessage: 'Started negotiation',
-      lastMessageTime: new Date(),
-      unreadCount: 0,
-      bountyId: bounty.id,
-      bountyTitle: bounty.title,
-      originalReward: bounty.reward,
-    };
+      ];
 
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: newNegotiationConvId,
-      senderId: 'system',
-      senderName: 'System',
-      senderAvatar: '',
-      content: `Negotiation started for "${bounty.title}". Original offer: ${bounty.reward}`,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
+      const conversationData = {
+        type: 'hunter-negotiation',
+        participants,
+        participantIds: [bounty.postedBy, currentUser.id],
+        lastMessage: 'Started negotiation',
+        lastMessageTime: Timestamp.now(),
+        unreadCount: 0,
+        bountyId: bounty.id,
+        bountyTitle: bounty.title,
+        originalReward: bounty.reward,
+      };
 
-    setConversations(prev => [newNegotiationConversation, ...prev]);
-    setMessages(prev => ({
-      ...prev,
-      [newNegotiationConvId]: [initialMessage],
-    }));
+      const conversationsRef = collection(db, 'conversations');
+      const conversationDoc = await addDoc(conversationsRef, conversationData);
+      console.log('Created negotiation conversation:', conversationDoc.id);
 
-    console.log('Started negotiation for bounty:', bountyId);
-  }, [bounties, conversations, currentUser]);
+      const initialMessageData = {
+        conversationId: conversationDoc.id,
+        senderId: 'system',
+        senderName: 'System',
+        senderAvatar: '',
+        content: `Negotiation started for "${bounty.title}". Original offer: ${bounty.reward}`,
+        timestamp: Timestamp.now(),
+        read: true,
+        type: 'text',
+      };
+
+      const initialMsgRef = await addDoc(collection(db, 'messages'), initialMessageData);
+      console.log('Created initial negotiation message:', initialMsgRef.id);
+
+      await loadConversations();
+      await loadMessagesForConversation(conversationDoc.id);
+
+      if (addNotification) {
+        addNotification({
+          userId: bounty.postedBy,
+          type: 'negotiation-started',
+          title: 'Negotiation Started',
+          message: `${currentUser.name} wants to negotiate on your bounty: "${bounty.title}"`,
+          relatedId: bountyId,
+        });
+      }
+
+      console.log('Started negotiation for bounty:', bountyId);
+    } catch (error) {
+      console.error('Error starting negotiation:', error);
+      throw error;
+    }
+  }, [bounties, conversations, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
 
   const cancelBounty = useCallback((bountyId: string) => {
     const updatedAccepted = acceptedBounties.filter(id => id !== bountyId);
