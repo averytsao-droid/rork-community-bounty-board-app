@@ -325,8 +325,8 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   }, [reviews, addNotification]);
 
   const applyToBounty = useCallback(async (bountyId: string) => {
-    if (myAppliedBounties.includes(bountyId)) {
-      console.log('Already applied to this bounty');
+    if (acceptedBounties.includes(bountyId)) {
+      console.log('Already accepted this bounty');
       return;
     }
 
@@ -337,7 +337,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
 
     try {
-      console.log('Accepting bounty:', bountyId);
+      console.log('✅ ACCEPTING BOUNTY AT ORIGINAL PRICE:', bountyId);
       const db = getFirebaseFirestore();
       
       const bountyRef = doc(db, 'bounties', bountyId);
@@ -345,6 +345,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         acceptedHunters: arrayUnion(currentUser.id),
         applicants: (bounty.applicants || 0) + 1,
       });
+      console.log('✅ Bounty updated with acceptedHunters');
 
       const huntersNeeded = bounty.huntersNeeded || 1;
       const acceptedHunters = bounty.acceptedHunters || [];
@@ -384,7 +385,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
       const conversationsRef = collection(db, 'conversations');
       const conversationDoc = await addDoc(conversationsRef, conversationData);
-      console.log('Created conversation:', conversationDoc.id);
+      console.log('✅ Created direct conversation:', conversationDoc.id);
 
       if (addNotification) {
         addNotification({
@@ -399,12 +400,12 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       await loadBounties();
       await loadAcceptedBounties();
       await loadConversations();
-      console.log('Applied to bounty:', bountyId, 'Hunters needed:', huntersNeeded);
+      console.log('✅ Bounty accepted and direct chat created');
     } catch (error) {
-      console.error('Error accepting bounty:', error);
+      console.error('❌ Error accepting bounty:', error);
       throw error;
     }
-  }, [bounties, myAppliedBounties, currentUser, addNotification, loadBounties, loadAcceptedBounties, loadConversations]);
+  }, [bounties, acceptedBounties, currentUser, addNotification, loadBounties, loadAcceptedBounties, loadConversations]);
 
   const updateBountyStatus = useCallback(async (bountyId: string, status: Bounty['status']) => {
     try {
@@ -683,11 +684,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     if (!bounty) return;
 
     const existingNegotiation = conversations.find(
-      c => c.bountyId === bountyId && c.type === 'hunter-negotiation'
+      c => c.bountyId === bountyId && c.type === 'hunter-negotiation' && c.participantIds?.includes(currentUser.id)
     );
 
     if (existingNegotiation) {
-      console.log('Already negotiating this bounty');
+      console.log('💬 Already negotiating this bounty, returning existing conversation');
       return;
     }
 
@@ -709,7 +710,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         },
       ];
 
-      const conversationData = {
+      const hunterNegotiationData = {
         type: 'hunter-negotiation',
         participants,
         participantIds: [bounty.postedBy, currentUser.id],
@@ -722,11 +723,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       };
 
       const conversationsRef = collection(db, 'conversations');
-      const conversationDoc = await addDoc(conversationsRef, conversationData);
-      console.log('Created negotiation conversation:', conversationDoc.id);
+      const hunterConversationDoc = await addDoc(conversationsRef, hunterNegotiationData);
+      console.log('💬 Created hunter-negotiation conversation:', hunterConversationDoc.id);
 
-      const initialMessageData = {
-        conversationId: conversationDoc.id,
+      const hunterInitialMessageData = {
+        conversationId: hunterConversationDoc.id,
         senderId: 'system',
         senderName: 'System',
         senderAvatar: '',
@@ -736,11 +737,46 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         type: 'text',
       };
 
-      const initialMsgRef = await addDoc(collection(db, 'messages'), initialMessageData);
-      console.log('Created initial negotiation message:', initialMsgRef.id);
+      await addDoc(collection(db, 'messages'), hunterInitialMessageData);
+      console.log('💬 Created initial message in hunter conversation');
+
+      const existingPosterNegotiation = conversations.find(
+        c => c.bountyId === bountyId && c.type === 'poster-negotiation'
+      );
+
+      if (!existingPosterNegotiation) {
+        const posterNegotiationData = {
+          type: 'poster-negotiation',
+          participants,
+          participantIds: [bounty.postedBy, currentUser.id],
+          lastMessage: 'Negotiation started',
+          lastMessageTime: Timestamp.now(),
+          unreadCount: 1,
+          bountyId: bounty.id,
+          bountyTitle: bounty.title,
+          originalReward: bounty.reward,
+        };
+
+        const posterConversationDoc = await addDoc(conversationsRef, posterNegotiationData);
+        console.log('💬 Created poster-negotiation conversation:', posterConversationDoc.id);
+
+        const posterInitialMessageData = {
+          conversationId: posterConversationDoc.id,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `${currentUser.name} wants to negotiate on "${bounty.title}". Original offer: ${bounty.reward}`,
+          timestamp: Timestamp.now(),
+          read: false,
+          type: 'text',
+        };
+
+        await addDoc(collection(db, 'messages'), posterInitialMessageData);
+        console.log('💬 Created initial message in poster conversation');
+      }
 
       await loadConversations();
-      await loadMessagesForConversation(conversationDoc.id);
+      await loadMessagesForConversation(hunterConversationDoc.id);
 
       if (addNotification) {
         addNotification({
@@ -752,9 +788,9 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         });
       }
 
-      console.log('Started negotiation for bounty:', bountyId);
+      console.log('✅ Started negotiation for bounty:', bountyId);
     } catch (error) {
-      console.error('Error starting negotiation:', error);
+      console.error('❌ Error starting negotiation:', error);
       throw error;
     }
   }, [bounties, conversations, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
@@ -863,15 +899,14 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       );
       
       if (existingConversation) {
-        console.log('Direct conversation already exists:', existingConversation.id);
+        console.log('✅ Direct conversation already exists:', existingConversation.id);
         
-        if (negotiationConversationId) {
-          console.log('🗑️ Deleting negotiation conversations for bounty:', bountyId);
+        if (negotiationConversationId && bountyId) {
+          console.log('🗑️ Deleting ALL negotiation conversations for bounty:', bountyId);
           const conversationsRef = collection(db, 'conversations');
           const q = query(
             conversationsRef,
-            where('bountyId', '==', bountyId),
-            where('participantIds', 'array-contains', currentUser.id)
+            where('bountyId', '==', bountyId)
           );
           const snapshot = await getDocs(q);
           
@@ -890,7 +925,17 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
             }
           }
           
+          if (bountyId) {
+            const bountyRef = doc(db, 'bounties', bountyId);
+            await updateDoc(bountyRef, {
+              acceptedHunters: arrayUnion(currentUser.id),
+            });
+            console.log('✅ Added hunter to acceptedHunters');
+          }
+          
           await loadConversations();
+          await loadBounties();
+          await loadAcceptedBounties();
         }
         
         return existingConversation.id;
@@ -929,12 +974,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       await addDoc(collection(db, 'messages'), initialMessageData);
       console.log('✅ Initial message created');
       
-      if (negotiationConversationId) {
-        console.log('🗑️ Deleting negotiation conversations for bounty:', bountyId);
+      if (negotiationConversationId && bountyId) {
+        console.log('🗑️ Deleting ALL negotiation conversations for bounty:', bountyId);
         const q = query(
           conversationsRef,
-          where('bountyId', '==', bountyId),
-          where('participantIds', 'array-contains', currentUser.id)
+          where('bountyId', '==', bountyId)
         );
         const snapshot = await getDocs(q);
         
@@ -952,9 +996,17 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
             }
           }
         }
+        
+        const bountyRef = doc(db, 'bounties', bountyId);
+        await updateDoc(bountyRef, {
+          acceptedHunters: arrayUnion(currentUser.id),
+        });
+        console.log('✅ Added hunter to acceptedHunters');
       }
       
       await loadConversations();
+      await loadBounties();
+      await loadAcceptedBounties();
       
       return conversationDoc.id;
     } catch (error: any) {
@@ -962,7 +1014,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error details:', error?.message);
       throw error;
     }
-  }, [conversations, currentUser, loadConversations]);
+  }, [conversations, currentUser, loadConversations, loadBounties, loadAcceptedBounties]);
 
   return useMemo(() => ({
     bounties,
