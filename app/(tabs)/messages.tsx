@@ -19,7 +19,7 @@ import { Conversation, ConversationType, Message } from '@/types';
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages, loadMessagesForConversation } = useBountyContext();
+  const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages, loadMessagesForConversation, createDirectConversation } = useBountyContext();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
   const [selectedTab, setSelectedTab] = useState<ConversationType>('direct');
@@ -286,7 +286,7 @@ export default function MessagesScreen() {
     </View>
   );
 
-  const handleAcceptOriginalPrice = () => {
+  const handleAcceptOriginalPrice = async () => {
     if (!selectedConversation) return;
     
     const conversation = selectedConversation;
@@ -294,48 +294,25 @@ export default function MessagesScreen() {
     
     if (!posterParticipant) return;
     
-    const newDirectConvId = `conv-direct-${Date.now()}`;
-    const newDirectConversation: Conversation = {
-      id: newDirectConvId,
-      type: 'direct',
-      participantId: posterParticipant.id,
-      participantName: posterParticipant.name,
-      participantAvatar: posterParticipant.avatar,
-      lastMessage: 'Bounty accepted at original price!',
-      lastMessageTime: new Date(),
-      unreadCount: 0,
-      bountyId: conversation.bountyId,
-      bountyTitle: conversation.bountyTitle,
-      originalReward: conversation.originalReward,
-    };
-
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: newDirectConvId,
-      senderId: 'system',
-      senderName: 'System',
-      senderAvatar: '',
-      content: `You accepted the bounty "${conversation.bountyTitle}" at the original price of ${conversation.originalReward}. Good luck!`,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    const updatedConversations = [
-      newDirectConversation,
-      ...conversations.filter(c => c.id !== conversation.id),
-    ];
-    
-    const updatedMessages = {
-      ...messages,
-      [newDirectConvId]: [initialMessage],
-    };
-    
-    setConversations(updatedConversations);
-    setMessages(updatedMessages);
-    setSelectedConversation(newDirectConversation);
-    
-    console.log('Accepted bounty at original price, created direct conversation:', newDirectConvId);
+    try {
+      const conversationId = await createDirectConversation(
+        posterParticipant.id,
+        posterParticipant.name,
+        posterParticipant.avatar,
+        conversation.bountyId,
+        conversation.bountyTitle
+      );
+      
+      console.log('Accepted bounty at original price, conversation created:', conversationId);
+      
+      // Navigate to the newly created conversation
+      const newConv = conversations.find(c => c.id === conversationId);
+      if (newConv) {
+        setSelectedConversation(newConv);
+      }
+    } catch (error) {
+      console.error('Error accepting original price:', error);
+    }
   };
 
   const renderChatView = () => {

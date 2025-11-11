@@ -430,6 +430,14 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     try {
       const db = getFirebaseFirestore();
       
+      const conversationRef = doc(db, 'conversations', conversationId);
+      const conversationExists = conversations.find(c => c.id === conversationId);
+      
+      if (!conversationExists) {
+        console.error('Conversation does not exist:', conversationId);
+        throw new Error(`Conversation ${conversationId} not found. Please ensure the conversation is created before sending messages.`);
+      }
+      
       const messageData = {
         conversationId,
         senderId: currentUser.id,
@@ -441,12 +449,15 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         type: 'text',
       };
 
+      console.log('Sending message to conversation:', conversationId);
       const docRef = await addDoc(collection(db, 'messages'), messageData);
+      console.log('Message document created:', docRef.id);
 
-      await updateDoc(doc(db, 'conversations', conversationId), {
+      await updateDoc(conversationRef, {
         lastMessage: content,
         lastMessageTime: Timestamp.now(),
       });
+      console.log('Conversation updated with last message');
 
       const newMessage: Message = {
         id: docRef.id,
@@ -467,9 +478,10 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       );
       setConversations(updatedConversations);
 
-      console.log('Message sent to Firebase:', docRef.id);
-    } catch (error) {
-      console.error('Error sending message:', error);
+      console.log('✅ Message sent successfully:', docRef.id);
+    } catch (error: any) {
+      console.error('❌ Error sending message:', error);
+      console.error('Error details:', error?.message);
       throw error;
     }
   }, [messages, conversations, currentUser]);
@@ -799,6 +811,50 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [user, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
+  const createDirectConversation = useCallback(async (otherUserId: string, otherUserName: string, otherUserAvatar: string, bountyId?: string, bountyTitle?: string) => {
+    try {
+      const db = getFirebaseFirestore();
+      
+      const existingConversation = conversations.find(
+        c => c.type === 'direct' && 
+        c.participantIds?.includes(otherUserId) && 
+        c.participantIds?.includes(currentUser.id) &&
+        (!bountyId || c.bountyId === bountyId)
+      );
+      
+      if (existingConversation) {
+        console.log('Direct conversation already exists:', existingConversation.id);
+        return existingConversation.id;
+      }
+      
+      const conversationData = {
+        type: 'direct' as const,
+        participantId: otherUserId,
+        participantName: otherUserName,
+        participantAvatar: otherUserAvatar,
+        participantIds: [currentUser.id, otherUserId],
+        bountyId: bountyId || null,
+        bountyTitle: bountyTitle || null,
+        lastMessage: '',
+        lastMessageTime: Timestamp.now(),
+        unreadCount: 0,
+      };
+      
+      console.log('Creating new direct conversation:', conversationData);
+      const conversationsRef = collection(db, 'conversations');
+      const conversationDoc = await addDoc(conversationsRef, conversationData);
+      console.log('✅ Direct conversation created:', conversationDoc.id);
+      
+      await loadConversations();
+      
+      return conversationDoc.id;
+    } catch (error: any) {
+      console.error('❌ Error creating direct conversation:', error);
+      console.error('Error details:', error?.message);
+      throw error;
+    }
+  }, [conversations, currentUser, loadConversations]);
+
   return useMemo(() => ({
     bounties,
     myPostedBounties,
@@ -824,6 +880,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     setConversations,
     setMessages,
     loadMessagesForConversation,
+    createDirectConversation,
   }), [
     bounties,
     myPostedBounties,
@@ -848,6 +905,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     deleteBounty,
     addReview,
     loadMessagesForConversation,
+    createDirectConversation,
   ]);
 });
 
