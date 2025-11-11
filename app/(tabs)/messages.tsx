@@ -291,27 +291,33 @@ export default function MessagesScreen() {
     
     const conversation = selectedConversation;
     const posterParticipant = conversation.participants?.find(p => p.role === 'poster');
+    const hunterParticipant = conversation.participants?.find(p => p.role === 'hunter');
     
-    if (!posterParticipant) return;
+    if (!posterParticipant || !hunterParticipant) return;
     
     try {
+      console.log('🎯 Accepting original price from negotiation:', conversation.id);
+      console.log('Poster:', posterParticipant.name, 'Hunter:', hunterParticipant.name);
+      
+      const otherUserId = currentUser.id === posterParticipant.id ? hunterParticipant.id : posterParticipant.id;
+      const otherUserName = currentUser.id === posterParticipant.id ? hunterParticipant.name : posterParticipant.name;
+      const otherUserAvatar = currentUser.id === posterParticipant.id ? hunterParticipant.avatar : posterParticipant.avatar;
+      
       const conversationId = await createDirectConversation(
-        posterParticipant.id,
-        posterParticipant.name,
-        posterParticipant.avatar,
+        otherUserId,
+        otherUserName,
+        otherUserAvatar,
         conversation.bountyId,
-        conversation.bountyTitle
+        conversation.bountyTitle,
+        conversation.originalReward,
+        conversation.id
       );
       
-      console.log('Accepted bounty at original price, conversation created:', conversationId);
+      console.log('✅ Accepted bounty at original price, conversation created:', conversationId);
       
-      // Navigate to the newly created conversation
-      const newConv = conversations.find(c => c.id === conversationId);
-      if (newConv) {
-        setSelectedConversation(newConv);
-      }
+      setSelectedConversation(null);
     } catch (error) {
-      console.error('Error accepting original price:', error);
+      console.error('❌ Error accepting original price:', error);
     }
   };
 
@@ -381,6 +387,19 @@ export default function MessagesScreen() {
               <DollarSign size={20} color="#FFFFFF" />
               <Text style={styles.acceptOriginalPriceText}>
                 Accept Original Price (${selectedConversation.originalReward})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {selectedConversation.type === 'poster-negotiation' && currentUserRole === 'poster' && (
+          <View style={styles.acceptOriginalPriceContainer}>
+            <TouchableOpacity
+              style={[styles.acceptOriginalPriceButton, { backgroundColor: '#8B5CF6' }]}
+              onPress={handleAcceptOriginalPrice}
+            >
+              <DollarSign size={20} color="#FFFFFF" />
+              <Text style={styles.acceptOriginalPriceText}>
+                Agree & Create Direct Chat (${selectedConversation.originalReward})
               </Text>
             </TouchableOpacity>
           </View>

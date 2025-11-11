@@ -548,6 +548,8 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     try {
       const db = getFirebaseFirestore();
 
+      console.log('💸 Accepting pay request:', messageId, 'Amount:', acceptedMessage.payRequest.amount);
+
       await updateDoc(doc(db, 'messages', messageId), {
         'payRequest.status': 'accepted',
         'payRequest.acceptedBy': currentUser.id,
@@ -575,58 +577,88 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       );
 
       if (otherParticipant) {
-        const newDirectConversationData = {
-          type: 'direct',
-          participantId: otherParticipant.id,
-          participantName: otherParticipant.name,
-          participantAvatar: otherParticipant.avatar,
-          participantIds: [currentUser.id, otherParticipant.id],
-          lastMessage: 'Pay request accepted! Let\'s get started.',
-          lastMessageTime: Timestamp.now(),
-          unreadCount: 0,
-          bountyId: conversation.bountyId,
-          bountyTitle: conversation.bountyTitle,
-          originalReward: acceptedMessage.payRequest.amount || conversation.originalReward,
-        };
+        console.log('📝 Creating direct conversation with:', otherParticipant.name);
+        
+        const existingDirectConv = conversations.find(
+          c => c.type === 'direct' &&
+          c.participantIds?.includes(otherParticipant.id) &&
+          c.participantIds?.includes(currentUser.id) &&
+          c.bountyId === conversation.bountyId
+        );
 
-        const newConvRef = await addDoc(collection(db, 'conversations'), newDirectConversationData);
+        if (existingDirectConv) {
+          console.log('✅ Direct conversation already exists:', existingDirectConv.id);
+        } else {
+          const newDirectConversationData = {
+            type: 'direct',
+            participantId: otherParticipant.id,
+            participantName: otherParticipant.name,
+            participantAvatar: otherParticipant.avatar,
+            participantIds: [currentUser.id, otherParticipant.id],
+            lastMessage: 'Pay request accepted! Let\'s get started.',
+            lastMessageTime: Timestamp.now(),
+            unreadCount: 0,
+            bountyId: conversation.bountyId,
+            bountyTitle: conversation.bountyTitle,
+            originalReward: acceptedMessage.payRequest.amount || conversation.originalReward,
+          };
 
-        const initialMessageData = {
-          conversationId: newConvRef.id,
-          senderId: 'system',
-          senderName: 'System',
-          senderAvatar: '',
-          content: `Pay request of ${acceptedMessage.payRequest.amount} accepted! The bounty is now assigned.`,
-          timestamp: Timestamp.now(),
-          read: true,
-          type: 'text',
-        };
+          const newConvRef = await addDoc(collection(db, 'conversations'), newDirectConversationData);
+          console.log('✅ Direct conversation created:', newConvRef.id);
 
-        const initialMsgRef = await addDoc(collection(db, 'messages'), initialMessageData);
+          const initialMessageData = {
+            conversationId: newConvRef.id,
+            senderId: 'system',
+            senderName: 'System',
+            senderAvatar: '',
+            content: `Pay request of ${acceptedMessage.payRequest.amount} accepted! The bounty is now assigned.`,
+            timestamp: Timestamp.now(),
+            read: true,
+            type: 'text',
+          };
 
-        const newDirectConversation: Conversation = {
-          id: newConvRef.id,
-          ...newDirectConversationData,
-          lastMessageTime: new Date(),
-        };
+          await addDoc(collection(db, 'messages'), initialMessageData);
+          console.log('✅ Initial message created');
 
-        const initialMessage: Message = {
-          id: initialMsgRef.id,
-          ...initialMessageData,
-          timestamp: new Date(),
-        };
+          setMessages(prev => ({
+            ...prev,
+            [newConvRef.id]: [{
+              id: Date.now().toString(),
+              ...initialMessageData,
+              timestamp: new Date(),
+            }],
+          }));
+        }
+
+        console.log('🗑️ Deleting negotiation conversations for bounty:', conversation.bountyId);
+        const conversationsRef = collection(db, 'conversations');
+        const q = query(
+          conversationsRef,
+          where('bountyId', '==', conversation.bountyId),
+          where('participantIds', 'array-contains', currentUser.id)
+        );
+        const snapshot = await getDocs(q);
+        
+        for (const convDoc of snapshot.docs) {
+          const conv = convDoc.data();
+          if (conv.type === 'hunter-negotiation' || conv.type === 'poster-negotiation') {
+            console.log('🗑️ Deleting conversation:', convDoc.id, 'Type:', conv.type);
+            await deleteDoc(doc(db, 'conversations', convDoc.id));
+            
+            const messagesRef = collection(db, 'messages');
+            const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+            const msgSnapshot = await getDocs(msgQuery);
+            for (const msgDoc of msgSnapshot.docs) {
+              await deleteDoc(doc(db, 'messages', msgDoc.id));
+            }
+          }
+        }
 
         await loadConversations();
-
-        setMessages(prev => ({
-          ...prev,
-          [newConvRef.id]: [initialMessage],
-        }));
-
-        console.log('Pay request accepted, created direct conversation:', newConvRef.id);
+        console.log('✅ Pay request accepted and negotiation conversations deleted');
       }
     } catch (error) {
-      console.error('Error accepting pay request:', error);
+      console.error('❌ Error accepting pay request:', error);
       throw error;
     }
   }, [conversations, messages, currentUser, loadConversations]);
@@ -811,7 +843,15 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [user, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
-  const createDirectConversation = useCallback(async (otherUserId: string, otherUserName: string, otherUserAvatar: string, bountyId?: string, bountyTitle?: string) => {
+  const createDirectConversation = useCallback(async (
+    otherUserId: string, 
+    otherUserName: string, 
+    otherUserAvatar: string, 
+    bountyId?: string, 
+    bountyTitle?: string,
+    originalReward?: number,
+    negotiationConversationId?: string
+  ) => {
     try {
       const db = getFirebaseFirestore();
       
@@ -824,9 +864,39 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       
       if (existingConversation) {
         console.log('Direct conversation already exists:', existingConversation.id);
+        
+        if (negotiationConversationId) {
+          console.log('🗑️ Deleting negotiation conversations for bounty:', bountyId);
+          const conversationsRef = collection(db, 'conversations');
+          const q = query(
+            conversationsRef,
+            where('bountyId', '==', bountyId),
+            where('participantIds', 'array-contains', currentUser.id)
+          );
+          const snapshot = await getDocs(q);
+          
+          for (const convDoc of snapshot.docs) {
+            const conv = convDoc.data();
+            if (conv.type === 'hunter-negotiation' || conv.type === 'poster-negotiation') {
+              console.log('🗑️ Deleting conversation:', convDoc.id, 'Type:', conv.type);
+              await deleteDoc(doc(db, 'conversations', convDoc.id));
+              
+              const messagesRef = collection(db, 'messages');
+              const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+              const msgSnapshot = await getDocs(msgQuery);
+              for (const msgDoc of msgSnapshot.docs) {
+                await deleteDoc(doc(db, 'messages', msgDoc.id));
+              }
+            }
+          }
+          
+          await loadConversations();
+        }
+        
         return existingConversation.id;
       }
       
+      console.log('📝 Creating new direct conversation');
       const conversationData = {
         type: 'direct' as const,
         participantId: otherUserId,
@@ -835,15 +905,54 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         participantIds: [currentUser.id, otherUserId],
         bountyId: bountyId || null,
         bountyTitle: bountyTitle || null,
-        lastMessage: '',
+        originalReward: originalReward || 0,
+        lastMessage: 'Bounty accepted at original price!',
         lastMessageTime: Timestamp.now(),
         unreadCount: 0,
       };
       
-      console.log('Creating new direct conversation:', conversationData);
       const conversationsRef = collection(db, 'conversations');
       const conversationDoc = await addDoc(conversationsRef, conversationData);
       console.log('✅ Direct conversation created:', conversationDoc.id);
+      
+      const initialMessageData = {
+        conversationId: conversationDoc.id,
+        senderId: 'system',
+        senderName: 'System',
+        senderAvatar: '',
+        content: `Bounty accepted at original price of ${originalReward}! The job is now assigned.`,
+        timestamp: Timestamp.now(),
+        read: true,
+        type: 'text',
+      };
+      
+      await addDoc(collection(db, 'messages'), initialMessageData);
+      console.log('✅ Initial message created');
+      
+      if (negotiationConversationId) {
+        console.log('🗑️ Deleting negotiation conversations for bounty:', bountyId);
+        const q = query(
+          conversationsRef,
+          where('bountyId', '==', bountyId),
+          where('participantIds', 'array-contains', currentUser.id)
+        );
+        const snapshot = await getDocs(q);
+        
+        for (const convDoc of snapshot.docs) {
+          const conv = convDoc.data();
+          if (conv.type === 'hunter-negotiation' || conv.type === 'poster-negotiation') {
+            console.log('🗑️ Deleting conversation:', convDoc.id, 'Type:', conv.type);
+            await deleteDoc(doc(db, 'conversations', convDoc.id));
+            
+            const messagesRef = collection(db, 'messages');
+            const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+            const msgSnapshot = await getDocs(msgQuery);
+            for (const msgDoc of msgSnapshot.docs) {
+              await deleteDoc(doc(db, 'messages', msgDoc.id));
+            }
+          }
+        }
+      }
       
       await loadConversations();
       
