@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { trpcClient } from '@/lib/trpc';
 import { Bounty, Conversation, Message, Review } from '@/types';
-import { mockBounties } from '@/mocks/bounties';
-import { mockConversations, mockMessages } from '@/mocks/messages';
 import { useAuth } from '@/contexts/AuthContext';
 import { getFirebaseFirestore } from '@/lib/firebaseClient';
 import { 
@@ -17,7 +14,9 @@ import {
   Timestamp,
   doc,
   updateDoc,
-  arrayUnion
+  arrayUnion,
+  deleteDoc,
+  arrayRemove
 } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
@@ -411,7 +410,9 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     try {
       console.log('Updating bounty status:', bountyId, status);
       
-      await trpcClient.bounties.updateStatus.mutate({ bountyId, status });
+      const db = getFirebaseFirestore();
+      const bountyRef = doc(db, 'bounties', bountyId);
+      await updateDoc(bountyRef, { status });
       
       await Promise.all([
         loadBounties(),
@@ -720,9 +721,30 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
 
     try {
-      console.log('Cancelling accepted bounty via tRPC:', bountyId);
+      console.log('Cancelling accepted bounty:', bountyId);
       
-      await trpcClient.bounties.cancelAccepted.mutate({ bountyId });
+      const db = getFirebaseFirestore();
+      const bountyRef = doc(db, 'bounties', bountyId);
+      
+      await updateDoc(bountyRef, {
+        acceptedHunters: arrayRemove(user.id),
+        applicants: (bounties.find(b => b.id === bountyId)?.applicants || 1) - 1,
+      });
+      
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(conversationsRef, where('bountyId', '==', bountyId), where('participantIds', 'array-contains', user.id));
+      const snapshot = await getDocs(q);
+      
+      for (const conversationDoc of snapshot.docs) {
+        await deleteDoc(doc(db, 'conversations', conversationDoc.id));
+        
+        const messagesRef = collection(db, 'messages');
+        const msgQuery = query(messagesRef, where('conversationId', '==', conversationDoc.id));
+        const msgSnapshot = await getDocs(msgQuery);
+        for (const msgDoc of msgSnapshot.docs) {
+          await deleteDoc(doc(db, 'messages', msgDoc.id));
+        }
+      }
       
       await Promise.all([
         loadBounties(),
@@ -735,7 +757,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error cancelling bounty:', error);
       throw error;
     }
-  }, [user, loadBounties, loadAcceptedBounties, loadConversations]);
+  }, [user, bounties, loadBounties, loadAcceptedBounties, loadConversations]);
 
   const deleteBounty = useCallback(async (bountyId: string) => {
     if (!user) {
@@ -743,9 +765,25 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
 
     try {
-      console.log('Deleting bounty via tRPC:', bountyId);
+      console.log('Deleting bounty:', bountyId);
       
-      await trpcClient.bounties.delete.mutate({ bountyId });
+      const db = getFirebaseFirestore();
+      
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(conversationsRef, where('bountyId', '==', bountyId));
+      const snapshot = await getDocs(q);
+      
+      for (const conversationDoc of snapshot.docs) {
+        const messagesRef = collection(db, 'messages');
+        const msgQuery = query(messagesRef, where('conversationId', '==', conversationDoc.id));
+        const msgSnapshot = await getDocs(msgQuery);
+        for (const msgDoc of msgSnapshot.docs) {
+          await deleteDoc(doc(db, 'messages', msgDoc.id));
+        }
+        await deleteDoc(doc(db, 'conversations', conversationDoc.id));
+      }
+      
+      await deleteDoc(doc(db, 'bounties', bountyId));
       
       await Promise.all([
         loadBounties(),
