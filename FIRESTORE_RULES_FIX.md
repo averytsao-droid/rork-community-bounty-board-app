@@ -37,7 +37,7 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.postedBy == request.auth.uid;
     }
     
-    // Conversations collection
+    // Conversations collection - authenticated users can read/write conversations they're part of
     match /conversations/{conversationId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
@@ -45,10 +45,10 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
     
-    // Messages collection
+    // Messages collection - authenticated users can send messages
     match /messages/{messageId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.senderId;
       allow update: if request.auth != null;
     }
   }
