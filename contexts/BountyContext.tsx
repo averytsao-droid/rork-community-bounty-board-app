@@ -407,20 +407,23 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [bounties, myAppliedBounties, currentUser, addNotification, loadBounties, loadAcceptedBounties, loadConversations]);
 
-  const updateBountyStatus = useCallback((bountyId: string, status: Bounty['status']) => {
-    const updatedBounties = bounties.map(b =>
-      b.id === bountyId ? { ...b, status } : b
-    );
-    setBounties(updatedBounties);
-
-    const updatedMyBounties = myPostedBounties.map(b =>
-      b.id === bountyId ? { ...b, status } : b
-    );
-    setMyPostedBounties(updatedMyBounties);
-
-    saveData(updatedBounties, updatedMyBounties);
-    console.log('Bounty status updated:', bountyId, status);
-  }, [bounties, myPostedBounties]);
+  const updateBountyStatus = useCallback(async (bountyId: string, status: Bounty['status']) => {
+    try {
+      console.log('Updating bounty status:', bountyId, status);
+      
+      await trpcClient.bounties.updateStatus.mutate({ bountyId, status });
+      
+      await Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+      ]);
+      
+      console.log('Bounty status updated successfully:', bountyId, status);
+    } catch (error) {
+      console.error('Error updating bounty status:', error);
+      throw error;
+    }
+  }, [loadBounties, loadMyBounties]);
 
   const sendMessage = useCallback(async (conversationId: string, content: string) => {
     try {
@@ -730,27 +733,25 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [loadBounties, loadAcceptedBounties, loadConversations]);
 
-  const deleteBounty = useCallback((bountyId: string) => {
-    const updatedBounties = bounties.filter(b => b.id !== bountyId);
-    setBounties(updatedBounties);
-
-    const updatedMyBounties = myPostedBounties.filter(b => b.id !== bountyId);
-    setMyPostedBounties(updatedMyBounties);
-
-    const updatedAccepted = acceptedBounties.filter(id => id !== bountyId);
-    setAcceptedBounties(updatedAccepted);
-
-    const updatedApplied = myAppliedBounties.filter(id => id !== bountyId);
-    setMyAppliedBounties(updatedApplied);
-
-    const relatedConvs = conversations.filter(c => c.bountyId === bountyId);
-    if (relatedConvs.length > 0) {
-      setConversations(prev => prev.filter(c => c.bountyId !== bountyId));
+  const deleteBounty = useCallback(async (bountyId: string) => {
+    try {
+      console.log('Deleting bounty:', bountyId);
+      
+      await trpcClient.bounties.delete.mutate({ bountyId });
+      
+      await Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]);
+      
+      console.log('Bounty deleted successfully:', bountyId);
+    } catch (error) {
+      console.error('Error deleting bounty:', error);
+      throw error;
     }
-
-    saveData(updatedBounties, updatedMyBounties, updatedApplied, updatedAccepted);
-    console.log('Bounty deleted:', bountyId);
-  }, [bounties, myPostedBounties, acceptedBounties, myAppliedBounties, conversations]);
+  }, [loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
   return useMemo(() => ({
     bounties,
