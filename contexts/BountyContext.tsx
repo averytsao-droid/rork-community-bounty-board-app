@@ -17,7 +17,9 @@ import {
   Timestamp,
   doc,
   updateDoc,
-  arrayUnion
+  arrayUnion,
+  getDoc,
+  deleteDoc
 } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
@@ -715,10 +717,45 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   }, [bounties, conversations, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
 
   const cancelBounty = useCallback(async (bountyId: string) => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
     try {
       console.log('Cancelling accepted bounty:', bountyId);
+      const db = getFirebaseFirestore();
       
-      await trpcClient.bounties.cancelAccepted.mutate({ bountyId });
+      const bountyRef = doc(db, 'bounties', bountyId);
+      const bountyDoc = await getDoc(bountyRef);
+
+      if (!bountyDoc.exists()) {
+        throw new Error('Bounty not found');
+      }
+
+      const bountyData = bountyDoc.data();
+      const currentAcceptedHunters = bountyData?.acceptedHunters || [];
+      const updatedHunters = currentAcceptedHunters.filter((id: string) => id !== user.id);
+      
+      await updateDoc(bountyRef, {
+        acceptedHunters: updatedHunters,
+        applicants: Math.max(0, (bountyData?.applicants || 1) - 1),
+      });
+
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(
+        conversationsRef,
+        where('bountyId', '==', bountyId),
+        where('participantIds', 'array-contains', user.id)
+      );
+      const conversationSnapshot = await getDocs(q);
+
+      for (const convDoc of conversationSnapshot.docs) {
+        const convData = convDoc.data();
+        if (convData.type === 'direct' && convData.participantIds?.length === 2) {
+          await deleteDoc(doc(db, 'conversations', convDoc.id));
+          console.log('Deleted conversation:', convDoc.id);
+        }
+      }
       
       await Promise.all([
         loadBounties(),
@@ -731,13 +768,39 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error cancelling bounty:', error);
       throw error;
     }
-  }, [loadBounties, loadAcceptedBounties, loadConversations]);
+  }, [user, loadBounties, loadAcceptedBounties, loadConversations]);
 
   const deleteBounty = useCallback(async (bountyId: string) => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
     try {
       console.log('Deleting bounty:', bountyId);
+      const db = getFirebaseFirestore();
       
-      await trpcClient.bounties.delete.mutate({ bountyId });
+      const bountyRef = doc(db, 'bounties', bountyId);
+      const bountyDoc = await getDoc(bountyRef);
+
+      if (!bountyDoc.exists()) {
+        throw new Error('Bounty not found');
+      }
+
+      const bountyData = bountyDoc.data();
+      if (bountyData.postedBy !== user.id) {
+        throw new Error('You can only delete your own bounties');
+      }
+
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(conversationsRef, where('bountyId', '==', bountyId));
+      const conversationSnapshot = await getDocs(q);
+
+      for (const convDoc of conversationSnapshot.docs) {
+        await deleteDoc(doc(db, 'conversations', convDoc.id));
+        console.log('Deleted conversation:', convDoc.id);
+      }
+
+      await deleteDoc(bountyRef);
       
       await Promise.all([
         loadBounties(),
@@ -751,7 +814,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error deleting bounty:', error);
       throw error;
     }
-  }, [loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
+  }, [user, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
   return useMemo(() => ({
     bounties,
