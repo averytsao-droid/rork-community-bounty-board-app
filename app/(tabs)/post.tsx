@@ -44,31 +44,42 @@ export default function PostBountyScreen() {
   };
 
   const handleClear = () => {
-    Alert.alert(
-      'Clear Form',
-      'Are you sure you want to clear all fields?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => {
-            setTitle('');
-            setDescription('');
-            setReward('');
-            setDuration('short');
-            setTags('');
-            setCategory(null);
-            setSelectedTemplate(null);
-            setHuntersNeeded('1');
-            setPostToFizz(false);
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to clear all fields?');
+      if (!confirmed) return;
+    }
+
+    const clearForm = () => {
+      setTitle('');
+      setDescription('');
+      setReward('');
+      setDuration('short');
+      setTags('');
+      setCategory(null);
+      setSelectedTemplate(null);
+      setHuntersNeeded('1');
+      setPostToFizz(false);
+    };
+
+    if (Platform.OS === 'web') {
+      clearForm();
+    } else {
+      Alert.alert(
+        'Clear Form',
+        'Are you sure you want to clear all fields?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Clear',
+            style: 'destructive',
+            onPress: clearForm
           }
-        }
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const handleSubmit = async () => {
