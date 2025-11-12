@@ -44,7 +44,7 @@ export interface Review {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'bounty-accepted' | 'bounty-completed' | 'review-received' | 'follow';
+  type: 'bounty-accepted' | 'bounty-completed' | 'review-received' | 'follow' | 'negotiation-started';
   title: string;
   message: string;
   createdAt: Date;

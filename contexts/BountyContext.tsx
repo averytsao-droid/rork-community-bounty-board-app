@@ -16,7 +16,8 @@ import {
   updateDoc,
   arrayUnion,
   deleteDoc,
-  arrayRemove
+  arrayRemove,
+  getDoc
 } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
@@ -31,6 +32,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
   const authContext = useAuth();
   const user = authContext.user ?? null;
   const addNotification = authContext.addNotification;
+  const setUser = authContext.setUser;
   
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
@@ -445,10 +447,92 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       
       const db = getFirebaseFirestore();
       const bountyRef = doc(db, 'bounties', bountyId);
+      const bounty = bounties.find(b => b.id === bountyId) || myPostedBounties.find(b => b.id === bountyId) || acceptedBountiesList.find(b => b.id === bountyId);
+      
+      if (!bounty) {
+        throw new Error('Bounty not found');
+      }
+      
       await updateDoc(bountyRef, { status });
       
       if (status === 'completed') {
-        console.log('💰 Bounty marked as completed - should handle payment here');
+        console.log('💰 Processing payment for completed bounty:', bountyId);
+        
+        const posterRef = doc(db, 'users', bounty.postedBy);
+        const posterDoc = await getDoc(posterRef);
+        
+        if (posterDoc.exists()) {
+          const posterData = posterDoc.data();
+          const posterCredits = posterData.credits || 0;
+          
+          if (posterCredits < bounty.reward) {
+            throw new Error('Insufficient credits to complete bounty');
+          }
+          
+          await updateDoc(posterRef, {
+            credits: posterCredits - bounty.reward,
+          });
+          console.log('💳 Deducted', bounty.reward, 'credits from poster');
+          
+          if (user && user.id === bounty.postedBy) {
+            const updatedUser = { ...user, credits: posterCredits - bounty.reward };
+            setUser(updatedUser);
+            await AsyncStorage.setItem('@auth_user', JSON.stringify({
+              ...updatedUser,
+              joinedDate: updatedUser.joinedDate.toISOString(),
+            }));
+          }
+        }
+        
+        const acceptedHunters = bounty.acceptedHunters || [];
+        if (acceptedHunters.length > 0) {
+          const rewardPerHunter = bounty.reward / acceptedHunters.length;
+          
+          for (const hunterId of acceptedHunters) {
+            const hunterRef = doc(db, 'users', hunterId);
+            const hunterDoc = await getDoc(hunterRef);
+            
+            if (hunterDoc.exists()) {
+              const hunterData = hunterDoc.data();
+              const hunterCredits = hunterData.credits || 0;
+              const hunterTotalEarned = hunterData.totalEarned || 0;
+              const hunterBountiesCompleted = hunterData.bountiesCompleted || 0;
+              
+              await updateDoc(hunterRef, {
+                credits: hunterCredits + rewardPerHunter,
+                totalEarned: hunterTotalEarned + rewardPerHunter,
+                bountiesCompleted: hunterBountiesCompleted + 1,
+              });
+              console.log('💰 Added', rewardPerHunter, 'credits to hunter:', hunterId);
+              
+              if (user && user.id === hunterId) {
+                const updatedUser = {
+                  ...user,
+                  credits: hunterCredits + rewardPerHunter,
+                  totalEarned: hunterTotalEarned + rewardPerHunter,
+                  bountiesCompleted: hunterBountiesCompleted + 1,
+                };
+                setUser(updatedUser);
+                await AsyncStorage.setItem('@auth_user', JSON.stringify({
+                  ...updatedUser,
+                  joinedDate: updatedUser.joinedDate.toISOString(),
+                }));
+              }
+              
+              if (addNotification) {
+                addNotification({
+                  userId: hunterId,
+                  type: 'bounty-completed',
+                  title: 'Bounty Completed!',
+                  message: `You earned ${rewardPerHunter.toFixed(2)} for completing "${bounty.title}"`,
+                  relatedId: bountyId,
+                });
+              }
+            }
+          }
+        }
+        
+        console.log('✅ Payment processed successfully');
       }
       
       await Promise.all([
@@ -462,7 +546,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error updating bounty status:', error);
       throw error;
     }
-  }, [loadBounties, loadMyBounties, loadAcceptedBounties]);
+  }, [bounties, myPostedBounties, acceptedBountiesList, user, addNotification, loadBounties, loadMyBounties, loadAcceptedBounties]);
 
   const sendMessage = useCallback(async (conversationId: string, content: string) => {
     try {

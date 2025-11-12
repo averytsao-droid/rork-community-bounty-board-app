@@ -399,6 +399,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   return useMemo(
     () => ({
       user,
+      setUser,
       isLoading,
       isInitialized,
       isAuthenticated: !!user,
