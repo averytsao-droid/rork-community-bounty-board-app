@@ -15,7 +15,7 @@ import { categoryLabels, categoryColors, durationLabels } from '@/mocks/bounties
 import { Bounty } from '@/types';
 
 export default function BrowseBountiesScreen() {
-  const { isLoading, applyToBounty, startNegotiation, myAppliedBounties, currentUser } = useBountyContext();
+  const { isLoading, applyToBounty, startNegotiation, myAppliedBounties, currentUser, conversations } = useBountyContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<string | null>(null);
@@ -30,26 +30,23 @@ export default function BrowseBountiesScreen() {
   const durations = Object.keys(durationLabels);
 
   const handleAcceptBounty = (bounty: Bounty) => {
-    const conversationId = applyToBounty(bounty.id);
-    if (conversationId) {
-      router.push(`/messages?conversationId=${conversationId}`);
-    } else {
-      router.push('/messages');
-    }
+    applyToBounty(bounty.id);
+    router.push('/messages');
   };
 
   const handleNegotiate = (bounty: Bounty) => {
-    const conversationId = startNegotiation(bounty.id);
-    if (conversationId) {
-      router.push(`/messages?conversationId=${conversationId}`);
-    } else {
-      router.push('/messages');
-    }
+    startNegotiation(bounty.id);
+    router.push('/messages');
   };
 
   const renderBountyCard = (bounty: Bounty) => {
     const isMyBounty = bounty.postedBy === currentUser.id;
     const hasApplied = myAppliedBounties.includes(bounty.id);
+    const isNegotiating = conversations.some(
+      c => c.bountyId === bounty.id && 
+      c.type === 'hunter-negotiation' && 
+      c.participantIds?.includes(currentUser.id)
+    );
     const canInteract = bounty.status === 'open' && !isMyBounty;
     const isExpanded = expandedBountyId === bounty.id;
 
@@ -95,7 +92,7 @@ export default function BrowseBountiesScreen() {
 
           <View style={styles.bountyRewardRow}>
             <DollarSign size={16} color="#10B981" />
-            <Text style={styles.bountyRewardText}>${bounty.reward}</Text>
+            <Text style={styles.bountyRewardText}>{bounty.reward}</Text>
           </View>
 
           {!isExpanded && (
@@ -127,7 +124,7 @@ export default function BrowseBountiesScreen() {
                 <View style={styles.detailRow}>
                   <DollarSign size={18} color="#8B5CF6" />
                   <Text style={styles.detailLabel}>Reward:</Text>
-                  <Text style={styles.detailValue}>${bounty.reward}</Text>
+                  <Text style={styles.detailValue}>{bounty.reward}</Text>
                 </View>
 
                 <View style={styles.detailRow}>
@@ -198,15 +195,17 @@ export default function BrowseBountiesScreen() {
               disabled={hasApplied}
             >
               <Text style={styles.acceptButtonText}>
-                {hasApplied ? 'Applied' : 'Accept'}
+                {hasApplied ? 'Accepted' : 'Accept'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionButton, styles.negotiateButton]}
+              style={[styles.actionButton, styles.negotiateButton, isNegotiating && styles.negotiateButtonActive]}
               onPress={() => handleNegotiate(bounty)}
             >
-              <MessageCircle size={16} color="#8B5CF6" />
-              <Text style={styles.negotiateButtonText}>Negotiate</Text>
+              <MessageCircle size={16} color={isNegotiating ? "#FFFFFF" : "#8B5CF6"} />
+              <Text style={[styles.negotiateButtonText, isNegotiating && styles.negotiateButtonTextActive]}>
+                {isNegotiating ? 'Negotiating' : 'Negotiate'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -651,10 +650,16 @@ const styles = StyleSheet.create({
   negotiateButton: {
     backgroundColor: '#F3E8FF',
   },
+  negotiateButtonActive: {
+    backgroundColor: '#8B5CF6',
+  },
   negotiateButtonText: {
     fontSize: 14,
     fontWeight: '700' as const,
     color: '#8B5CF6',
+  },
+  negotiateButtonTextActive: {
+    color: '#FFFFFF',
   },
   actionButtonDisabled: {
     backgroundColor: '#D1D5DB',

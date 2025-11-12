@@ -12,35 +12,19 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Send, ArrowLeft, Users, DollarSign } from 'lucide-react-native';
+import { Stack, useRouter } from 'expo-router';
+import { Send, ArrowLeft, Users, DollarSign, ExternalLink } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { Conversation, ConversationType, Message } from '@/types';
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { conversationId } = useLocalSearchParams<{ conversationId?: string }>();
-  const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages } = useBountyContext();
+  const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages, loadMessagesForConversation, createDirectConversation } = useBountyContext();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
   const [selectedTab, setSelectedTab] = useState<ConversationType>('direct');
   const [showPayRequestInput, setShowPayRequestInput] = useState(false);
   const [payRequestAmount, setPayRequestAmount] = useState('');
-  
-  // Auto-select conversation from URL parameter
-  useEffect(() => {
-    if (conversationId && conversations.length > 0) {
-      const conversation = conversations.find(c => c.id === conversationId);
-      if (conversation) {
-        setSelectedConversation(conversation);
-        markConversationAsRead(conversationId);
-        // Set the appropriate tab based on conversation type
-        setSelectedTab(conversation.type);
-      }
-    }
-  }, [conversationId, conversations, markConversationAsRead]);
   
   useEffect(() => {
     if (selectedConversation) {
@@ -65,9 +49,10 @@ export default function MessagesScreen() {
     return date.toLocaleDateString();
   };
 
-  const handleConversationSelect = (conversation: Conversation) => {
+  const handleConversationSelect = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
     markConversationAsRead(conversation.id);
+    await loadMessagesForConversation(conversation.id);
   };
 
   const handleSendMessage = () => {
@@ -102,6 +87,7 @@ export default function MessagesScreen() {
     const accepted: Conversation[] = [];
 
     filteredConversations.forEach(conv => {
+      // Check if current user is the poster of the bounty
       const bounty = [...bounties, ...myPostedBounties].find(b => b.id === conv.bountyId);
       if (bounty && bounty.postedBy === currentUser.id) {
         posted.push(conv);
@@ -301,56 +287,39 @@ export default function MessagesScreen() {
     </View>
   );
 
-  const handleAcceptOriginalPrice = () => {
+  const handleAcceptOriginalPrice = async () => {
     if (!selectedConversation) return;
     
     const conversation = selectedConversation;
     const posterParticipant = conversation.participants?.find(p => p.role === 'poster');
+    const hunterParticipant = conversation.participants?.find(p => p.role === 'hunter');
     
-    if (!posterParticipant) return;
+    if (!posterParticipant || !hunterParticipant) return;
     
-    const newDirectConvId = `conv-direct-${Date.now()}`;
-    const newDirectConversation: Conversation = {
-      id: newDirectConvId,
-      type: 'direct',
-      participantId: posterParticipant.id,
-      participantName: posterParticipant.name,
-      participantAvatar: posterParticipant.avatar,
-      lastMessage: 'Bounty accepted at original price!',
-      lastMessageTime: new Date(),
-      unreadCount: 0,
-      bountyId: conversation.bountyId,
-      bountyTitle: conversation.bountyTitle,
-      originalReward: conversation.originalReward,
-    };
-
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: newDirectConvId,
-      senderId: 'system',
-      senderName: 'System',
-      senderAvatar: '',
-      content: `You accepted the bounty "${conversation.bountyTitle}" at the original price of ${conversation.originalReward}. Good luck!`,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    const updatedConversations = [
-      newDirectConversation,
-      ...conversations.filter(c => c.id !== conversation.id),
-    ];
-    
-    const updatedMessages = {
-      ...messages,
-      [newDirectConvId]: [initialMessage],
-    };
-    
-    setConversations(updatedConversations);
-    setMessages(updatedMessages);
-    setSelectedConversation(newDirectConversation);
-    
-    console.log('Accepted bounty at original price, created direct conversation:', newDirectConvId);
+    try {
+      console.log('🎯 Accepting original price from negotiation:', conversation.id);
+      console.log('Poster:', posterParticipant.name, 'Hunter:', hunterParticipant.name);
+      
+      const otherUserId = currentUser.id === posterParticipant.id ? hunterParticipant.id : posterParticipant.id;
+      const otherUserName = currentUser.id === posterParticipant.id ? hunterParticipant.name : posterParticipant.name;
+      const otherUserAvatar = currentUser.id === posterParticipant.id ? hunterParticipant.avatar : posterParticipant.avatar;
+      
+      const conversationId = await createDirectConversation(
+        otherUserId,
+        otherUserName,
+        otherUserAvatar,
+        conversation.bountyId,
+        conversation.bountyTitle,
+        conversation.originalReward,
+        conversation.id
+      );
+      
+      console.log('✅ Accepted bounty at original price, conversation created:', conversationId);
+      
+      setSelectedConversation(null);
+    } catch (error) {
+      console.error('❌ Error accepting original price:', error);
+    }
   };
 
   const renderChatView = () => {
@@ -370,7 +339,7 @@ export default function MessagesScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={100}
       >
-        <View style={[styles.chatHeader, { paddingTop: insets.top }]}>
+        <View style={styles.chatHeader}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => setSelectedConversation(null)}
@@ -395,6 +364,16 @@ export default function MessagesScreen() {
                   </Text>
                 )}
               </View>
+              {selectedConversation.bountyId && (
+                <TouchableOpacity
+                  style={styles.linkToBountyButton}
+                  onPress={() => {
+                    router.push('/(tabs)/my-bounties');
+                  }}
+                >
+                  <ExternalLink size={20} color="#8B5CF6" />
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <>
@@ -419,6 +398,19 @@ export default function MessagesScreen() {
               <DollarSign size={20} color="#FFFFFF" />
               <Text style={styles.acceptOriginalPriceText}>
                 Accept Original Price (${selectedConversation.originalReward})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {selectedConversation.type === 'poster-negotiation' && currentUserRole === 'poster' && (
+          <View style={styles.acceptOriginalPriceContainer}>
+            <TouchableOpacity
+              style={[styles.acceptOriginalPriceButton, { backgroundColor: '#8B5CF6' }]}
+              onPress={handleAcceptOriginalPrice}
+            >
+              <DollarSign size={20} color="#FFFFFF" />
+              <Text style={styles.acceptOriginalPriceText}>
+                Agree & Create Direct Chat (${selectedConversation.originalReward})
               </Text>
             </TouchableOpacity>
           </View>
@@ -561,7 +553,7 @@ export default function MessagesScreen() {
         </ScrollView>
 
         {showPayRequestInput ? (
-          <View style={[styles.payRequestInputContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.payRequestInputContainer}>
             <View style={styles.payRequestInputHeader}>
               <Text style={styles.payRequestInputTitle}>Send Pay Request</Text>
               <TouchableOpacity onPress={() => setShowPayRequestInput(false)}>
@@ -593,7 +585,7 @@ export default function MessagesScreen() {
             </View>
           </View>
         ) : (
-          <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.inputContainer}>
             {isNegotiation && (
               <TouchableOpacity
                 style={styles.payRequestIconButton}
@@ -1093,5 +1085,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700' as const,
     color: '#FFFFFF',
+  },
+  linkToBountyButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3E8FF',
+    marginLeft: 8,
   },
 });

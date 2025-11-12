@@ -2,9 +2,23 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Bounty, Conversation, Message, Review } from '@/types';
-import { mockBounties } from '@/mocks/bounties';
-import { mockConversations, mockMessages } from '@/mocks/messages';
 import { useAuth } from '@/contexts/AuthContext';
+import { getFirebaseFirestore } from '@/lib/firebaseClient';
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy, 
+  Timestamp,
+  doc,
+  updateDoc,
+  arrayUnion,
+  deleteDoc,
+  arrayRemove,
+  getDoc
+} from 'firebase/firestore';
 
 const STORAGE_KEYS = {
   BOUNTIES: '@bounties',
@@ -15,8 +29,23 @@ const STORAGE_KEYS = {
 };
 
 export const [BountyProvider, useBountyContext] = createContextHook(() => {
-  const { user, addNotification } = useAuth();
-  const currentUser = user ? {
+  const authContext = useAuth();
+  const user = authContext.user ?? null;
+  const addNotification = authContext.addNotification;
+  const setUser = authContext.setUser;
+  
+  const [bounties, setBounties] = useState<Bounty[]>([]);
+  const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
+  const [acceptedBountiesList, setAcceptedBountiesList] = useState<Bounty[]>([]);
+  const [myAppliedBounties, setMyAppliedBounties] = useState<string[]>([]);
+  const [acceptedBounties, setAcceptedBounties] = useState<string[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [conversationsInitialized, setConversationsInitialized] = useState(false);
+
+  const currentUser = useMemo(() => user ? {
     ...user,
     credits: user.credits ?? 1000,
     totalEarned: user.totalEarned ?? 0,
@@ -34,15 +63,157 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     rating: 0,
     joinedDate: new Date(),
     credits: 1000,
-  };
-  const [bounties, setBounties] = useState<Bounty[]>(mockBounties);
-  const [myPostedBounties, setMyPostedBounties] = useState<Bounty[]>([]);
-  const [myAppliedBounties, setMyAppliedBounties] = useState<string[]>([]);
-  const [acceptedBounties, setAcceptedBounties] = useState<string[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(mockMessages);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  }, [user]);
+
+  const loadBounties = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      const q = query(bountiesRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const loadedBounties = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      console.log('Loaded bounties from Firebase:', loadedBounties.length);
+      setBounties(loadedBounties);
+    } catch (error) {
+      console.error('Error loading bounties:', error);
+    }
+  }, [user]);
+
+  const loadMyBounties = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      const q = query(bountiesRef, where('postedBy', '==', user.id), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const loadedBounties = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      console.log('Loaded my bounties from Firebase:', loadedBounties.length);
+      setMyPostedBounties(loadedBounties);
+    } catch (error) {
+      console.error('Error loading my bounties:', error);
+    }
+  }, [user]);
+
+  const loadAcceptedBounties = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      
+      // Load bounties where user is a hunter
+      const qAsHunter = query(bountiesRef, where('acceptedHunters', 'array-contains', user.id));
+      const snapshotAsHunter = await getDocs(qAsHunter);
+      const bountiesAsHunter = snapshotAsHunter.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      
+      // Load bounties posted by user that have been accepted
+      const qAsPoster = query(
+        bountiesRef, 
+        where('postedBy', '==', user.id),
+        where('status', 'in', ['in-progress', 'completed'])
+      );
+      const snapshotAsPoster = await getDocs(qAsPoster);
+      const bountiesAsPoster = snapshotAsPoster.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      
+      // Combine and deduplicate bounties
+      const allAcceptedBounties = [...bountiesAsHunter, ...bountiesAsPoster];
+      const uniqueBounties = Array.from(
+        new Map(allAcceptedBounties.map(b => [b.id, b])).values()
+      );
+      
+      console.log('Loaded accepted bounties from Firebase:');
+      console.log('  As Hunter:', bountiesAsHunter.length);
+      console.log('  As Poster:', bountiesAsPoster.length);
+      console.log('  Total Unique:', uniqueBounties.length);
+      
+      setAcceptedBountiesList(uniqueBounties);
+      setAcceptedBounties(bountiesAsHunter.map(b => b.id));
+      setMyAppliedBounties(bountiesAsHunter.map(b => b.id));
+    } catch (error) {
+      console.error('Error loading accepted bounties:', error);
+    }
+  }, [user]);
+
+  const loadConversations = useCallback(async () => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(
+        conversationsRef,
+        where('participantIds', 'array-contains', user.id),
+        orderBy('lastMessageTime', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const loadedConversations = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        lastMessageTime: doc.data().lastMessageTime?.toDate() || new Date(),
+      })) as Conversation[];
+      console.log('Loaded conversations from Firebase:', loadedConversations.length);
+      setConversations(loadedConversations);
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+    }
+  }, [user]);
+
+  const loadMessagesForConversation = useCallback(async (conversationId: string) => {
+    if (!user) return;
+    try {
+      const db = getFirebaseFirestore();
+      const messagesRef = collection(db, 'messages');
+      const q = query(
+        messagesRef,
+        where('conversationId', '==', conversationId),
+        orderBy('timestamp', 'asc')
+      );
+      const snapshot = await getDocs(q);
+      const loadedMessages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate() || new Date(),
+      })) as Message[];
+      console.log('Loaded messages from Firebase:', conversationId, loadedMessages.length);
+      setMessages(prev => ({
+        ...prev,
+        [conversationId]: loadedMessages,
+      }));
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      setIsLoading(true);
+      Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]).finally(() => {
+        setIsLoading(false);
+      });
+    } else {
+      setIsLoading(false);
+    }
+  }, [user, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
   useEffect(() => {
     loadData();
@@ -50,29 +221,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
 
   const loadData = async () => {
     try {
-      const [storedBounties, storedMyBounties, storedApplied, storedAccepted, storedReviews] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.BOUNTIES),
-        AsyncStorage.getItem(STORAGE_KEYS.MY_BOUNTIES),
+      const [storedApplied, storedAccepted, storedReviews] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.APPLIED_BOUNTIES),
         AsyncStorage.getItem(STORAGE_KEYS.ACCEPTED_BOUNTIES),
         AsyncStorage.getItem(STORAGE_KEYS.REVIEWS),
       ]);
-
-      if (storedBounties) {
-        const parsed = JSON.parse(storedBounties);
-        setBounties(parsed.map((b: Bounty) => ({
-          ...b,
-          createdAt: new Date(b.createdAt),
-        })));
-      }
-
-      if (storedMyBounties) {
-        const parsed = JSON.parse(storedMyBounties);
-        setMyPostedBounties(parsed.map((b: Bounty) => ({
-          ...b,
-          createdAt: new Date(b.createdAt),
-        })));
-      }
 
       if (storedApplied) {
         setMyAppliedBounties(JSON.parse(storedApplied));
@@ -91,8 +244,6 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       }
     } catch (error) {
       console.error('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -135,26 +286,47 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   };
 
-  const addBounty = useCallback((bounty: Omit<Bounty, 'id' | 'postedBy' | 'postedByName' | 'postedByAvatar' | 'createdAt' | 'applicants'>) => {
-    const newBounty: Bounty = {
-      ...bounty,
-      id: Date.now().toString(),
-      postedBy: currentUser.id,
-      postedByName: currentUser.name,
-      postedByAvatar: currentUser.avatar,
-      createdAt: new Date(),
-      applicants: 0,
-    };
-
-    const updatedBounties = [newBounty, ...bounties];
-    const updatedMyBounties = [newBounty, ...myPostedBounties];
+  const addBounty = useCallback(async (bounty: Omit<Bounty, 'id' | 'postedBy' | 'postedByName' | 'postedByAvatar' | 'createdAt' | 'applicants'>) => {
+    console.log('============================================');
+    console.log('addBounty() CALLED FROM CONTEXT');
+    console.log('============================================');
+    console.log('Bounty data to create:', bounty);
     
-    setBounties(updatedBounties);
-    setMyPostedBounties(updatedMyBounties);
-    saveData(updatedBounties, updatedMyBounties);
+    if (!user) {
+      throw new Error('Must be logged in to create a bounty');
+    }
     
-    console.log('Bounty added:', newBounty);
-  }, [bounties, myPostedBounties]);
+    try {
+      const db = getFirebaseFirestore();
+      const bountiesRef = collection(db, 'bounties');
+      
+      const bountyData = {
+        ...bounty,
+        postedBy: user.id,
+        postedByName: user.name,
+        postedByAvatar: user.avatar,
+        createdAt: Timestamp.now(),
+        applicants: 0,
+      };
+      
+      console.log('Creating bounty in Firebase:', bountyData);
+      const docRef = await addDoc(bountiesRef, bountyData);
+      console.log('✓ Bounty created with ID:', docRef.id);
+      
+      await loadBounties();
+      await loadMyBounties();
+      
+      console.log('============================================');
+    } catch (error: any) {
+      console.log('============================================');
+      console.log('✗ ERROR in addBounty()');
+      console.log('============================================');
+      console.error('Error:', error);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
+      throw error;
+    }
+  }, [user, loadBounties, loadMyBounties]);
 
   const addReview = useCallback(async (review: Omit<Review, 'id' | 'createdAt'>) => {
     const newReview: Review = {
@@ -180,250 +352,499 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     console.log('Review added:', newReview);
   }, [reviews, addNotification]);
 
-  const applyToBounty = useCallback((bountyId: string): string | null => {
-    if (myAppliedBounties.includes(bountyId)) {
-      console.log('Already applied to this bounty');
-      // Return existing conversation ID if already applied
-      const existingConv = conversations.find(
-        c => c.bountyId === bountyId && c.type === 'direct'
-      );
-      return existingConv?.id || null;
+  const applyToBounty = useCallback(async (bountyId: string) => {
+    if (acceptedBounties.includes(bountyId)) {
+      console.log('Already accepted this bounty');
+      return;
     }
 
     const bounty = bounties.find(b => b.id === bountyId);
-    if (!bounty) return null;
-
-    const updatedApplied = [...myAppliedBounties, bountyId];
-    setMyAppliedBounties(updatedApplied);
-
-    const updatedAccepted = [...acceptedBounties, bountyId];
-    setAcceptedBounties(updatedAccepted);
-
-    const updatedBounties = bounties.map(b =>
-      b.id === bountyId ? { 
-        ...b, 
-        applicants: b.applicants + 1,
-        acceptedHunters: [...(b.acceptedHunters || []), currentUser.id]
-      } : b
-    );
-    setBounties(updatedBounties);
-
-    const huntersNeeded = bounty.huntersNeeded || 1;
-    const acceptedHunters = bounty.acceptedHunters || [];
-    const allHunters = [...acceptedHunters, currentUser.id];
-
-    const newDirectConvId = `conv-direct-${Date.now()}`;
-    const participants = [
-      {
-        id: bounty.postedBy,
-        name: bounty.postedByName,
-        avatar: bounty.postedByAvatar,
-        role: 'poster' as const,
-      },
-      ...allHunters.map(hunterId => ({
-        id: hunterId,
-        name: hunterId === currentUser.id ? currentUser.name : 'Hunter',
-        avatar: hunterId === currentUser.id ? currentUser.avatar : 'https://i.pravatar.cc/150',
-        role: 'hunter' as const,
-      })),
-    ];
-
-    const newDirectConversation: Conversation = {
-      id: newDirectConvId,
-      type: 'direct',
-      participantId: bounty.postedBy,
-      participantName: bounty.postedByName,
-      participantAvatar: bounty.postedByAvatar,
-      participants: huntersNeeded > 1 ? participants : undefined,
-      lastMessage: 'You accepted this bounty!',
-      lastMessageTime: new Date(),
-      unreadCount: 0,
-      bountyId: bounty.id,
-      bountyTitle: bounty.title,
-      originalReward: bounty.reward,
-    };
-
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: newDirectConvId,
-      senderId: 'system',
-      senderName: 'System',
-      senderAvatar: '',
-      content: huntersNeeded > 1 
-        ? `You accepted the bounty "${bounty.title}" for ${bounty.reward}. This bounty needs ${huntersNeeded} hunters. Good luck!`
-        : `You accepted the bounty "${bounty.title}" for ${bounty.reward}. Good luck!`,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    setConversations(prev => [newDirectConversation, ...prev]);
-    setMessages(prev => ({
-      ...prev,
-      [newDirectConvId]: [initialMessage],
-    }));
-
-    if (addNotification) {
-      addNotification({
-        userId: bounty.postedBy,
-        type: 'bounty-accepted',
-        title: 'Bounty Accepted!',
-        message: `${currentUser.name} accepted your bounty: "${bounty.title}"`,
-        relatedId: bountyId,
-      });
+    if (!bounty) {
+      console.error('Bounty not found:', bountyId);
+      return;
     }
 
-    saveData(updatedBounties, undefined, updatedApplied, updatedAccepted);
-    console.log('Applied to bounty:', bountyId, 'Hunters needed:', huntersNeeded);
-    return newDirectConvId;
-  }, [bounties, myAppliedBounties, acceptedBounties, currentUser, conversations]);
+    try {
+      console.log('✅ ACCEPTING BOUNTY AT ORIGINAL PRICE:', bountyId);
+      const db = getFirebaseFirestore();
+      
+      const bountyRef = doc(db, 'bounties', bountyId);
+      await updateDoc(bountyRef, {
+        acceptedHunters: arrayUnion(currentUser.id),
+        applicants: (bounty.applicants || 0) + 1,
+      });
+      console.log('✅ Bounty updated with acceptedHunters');
 
-  const updateBountyStatus = useCallback((bountyId: string, status: Bounty['status']) => {
-    const updatedBounties = bounties.map(b =>
-      b.id === bountyId ? { ...b, status } : b
-    );
-    setBounties(updatedBounties);
+      const huntersNeeded = bounty.huntersNeeded || 1;
+      const acceptedHunters = bounty.acceptedHunters || [];
+      const allHunters = [...acceptedHunters, currentUser.id];
 
-    const updatedMyBounties = myPostedBounties.map(b =>
-      b.id === bountyId ? { ...b, status } : b
-    );
-    setMyPostedBounties(updatedMyBounties);
+      let participants;
+      if (huntersNeeded > 1) {
+        participants = [
+          {
+            id: bounty.postedBy,
+            name: bounty.postedByName,
+            avatar: bounty.postedByAvatar,
+            role: 'poster' as const,
+          },
+          ...allHunters.map(hunterId => ({
+            id: hunterId,
+            name: hunterId === currentUser.id ? currentUser.name : 'Hunter',
+            avatar: hunterId === currentUser.id ? currentUser.avatar : 'https://i.pravatar.cc/150',
+            role: 'hunter' as const,
+          })),
+        ];
+      }
 
-    saveData(updatedBounties, updatedMyBounties);
-    console.log('Bounty status updated:', bountyId, status);
-  }, [bounties, myPostedBounties]);
-
-  const sendMessage = useCallback((conversationId: string, content: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      conversationId,
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      content,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    const updatedMessages = {
-      ...messages,
-      [conversationId]: [...(messages[conversationId] || []), newMessage],
-    };
-    setMessages(updatedMessages);
-
-    const updatedConversations = conversations.map(c =>
-      c.id === conversationId
-        ? { ...c, lastMessage: content, lastMessageTime: new Date() }
-        : c
-    );
-    setConversations(updatedConversations);
-
-    console.log('Message sent:', newMessage);
-  }, [messages, conversations]);
-
-  const sendPayRequest = useCallback((conversationId: string, amount: number) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      conversationId,
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      content: '',
-      timestamp: new Date(),
-      read: true,
-      type: 'pay-request',
-      payRequest: {
-        amount,
-        status: 'pending',
-      },
-    };
-
-    const updatedMessages = {
-      ...messages,
-      [conversationId]: [...(messages[conversationId] || []), newMessage],
-    };
-    setMessages(updatedMessages);
-
-    const updatedConversations = conversations.map(c =>
-      c.id === conversationId
-        ? { ...c, lastMessage: `Pay request: $${amount}`, lastMessageTime: new Date() }
-        : c
-    );
-    setConversations(updatedConversations);
-
-    console.log('Pay request sent:', newMessage);
-  }, [messages, conversations]);
-
-  const acceptPayRequest = useCallback((conversationId: string, messageId: string) => {
-    const conversation = conversations.find(c => c.id === conversationId);
-    if (!conversation) return;
-
-    const updatedMessages = {
-      ...messages,
-      [conversationId]: messages[conversationId].map(m =>
-        m.id === messageId && m.payRequest
-          ? {
-              ...m,
-              payRequest: {
-                ...m.payRequest,
-                status: 'accepted' as const,
-                acceptedBy: currentUser.id,
-              },
-            }
-          : m
-      ),
-    };
-    setMessages(updatedMessages);
-
-    const acceptedMessage = messages[conversationId].find(m => m.id === messageId);
-    if (!acceptedMessage) return;
-
-    const newDirectConvId = `conv-direct-${Date.now()}`;
-    const otherParticipant = conversation.participants?.find(
-      p => p.id === acceptedMessage.senderId
-    );
-
-    if (otherParticipant) {
-      const newDirectConversation: Conversation = {
-        id: newDirectConvId,
-        type: 'direct',
-        participantId: otherParticipant.id,
-        participantName: otherParticipant.name,
-        participantAvatar: otherParticipant.avatar,
-        lastMessage: 'Pay request accepted! Let\'s get started.',
-        lastMessageTime: new Date(),
+      const conversationData: any = {
+        type: 'direct' as const,
+        participantId: bounty.postedBy,
+        participantName: bounty.postedByName,
+        participantAvatar: bounty.postedByAvatar,
+        participantIds: [currentUser.id, bounty.postedBy],
+        bountyId: bounty.id,
+        bountyTitle: bounty.title,
+        originalReward: bounty.reward,
+        lastMessage: huntersNeeded > 1 
+          ? `You accepted the bounty "${bounty.title}" for ${bounty.reward}. This bounty needs ${huntersNeeded} hunters. Good luck!`
+          : `You accepted the bounty "${bounty.title}" for ${bounty.reward}. Good luck!`,
+        lastMessageTime: Timestamp.now(),
         unreadCount: 0,
-        bountyId: conversation.bountyId,
-        bountyTitle: conversation.bountyTitle,
-        originalReward: acceptedMessage.payRequest?.amount || conversation.originalReward,
       };
+      
+      if (participants) {
+        conversationData.participants = participants;
+      }
 
-      const initialMessage: Message = {
-        id: Date.now().toString(),
-        conversationId: newDirectConvId,
-        senderId: 'system',
-        senderName: 'System',
-        senderAvatar: '',
-        content: `Pay request of $${acceptedMessage.payRequest?.amount} accepted! The bounty is now assigned.`,
-        timestamp: new Date(),
-        read: true,
+      const conversationsRef = collection(db, 'conversations');
+      const conversationDoc = await addDoc(conversationsRef, conversationData);
+      console.log('✅ Created direct conversation:', conversationDoc.id);
+
+      if (addNotification) {
+        addNotification({
+          userId: bounty.postedBy,
+          type: 'bounty-accepted',
+          title: 'Bounty Accepted!',
+          message: `${currentUser.name} accepted your bounty: "${bounty.title}"`,
+          relatedId: bountyId,
+        });
+      }
+
+      await loadBounties();
+      await loadAcceptedBounties();
+      await loadConversations();
+      console.log('✅ Bounty accepted and direct chat created');
+    } catch (error) {
+      console.error('❌ Error accepting bounty:', error);
+      throw error;
+    }
+  }, [bounties, acceptedBounties, currentUser, addNotification, loadBounties, loadAcceptedBounties, loadConversations]);
+
+  const completeBounty = useCallback(async (bountyId: string) => {
+    try {
+      console.log('💰 Starting bounty completion:', bountyId);
+      
+      const db = getFirebaseFirestore();
+      const bountyRef = doc(db, 'bounties', bountyId);
+      const bountyDoc = await getDoc(bountyRef);
+      
+      if (!bountyDoc.exists()) {
+        throw new Error('Bounty not found');
+      }
+      
+      const bounty = bountyDoc.data() as Bounty;
+      
+      if (bounty.postedBy !== user?.id) {
+        throw new Error('Only the poster can complete the bounty');
+      }
+      
+      if (bounty.status === 'completed') {
+        throw new Error('Bounty is already completed');
+      }
+      
+      const posterRef = doc(db, 'users', bounty.postedBy);
+      const posterDoc = await getDoc(posterRef);
+      
+      if (!posterDoc.exists()) {
+        throw new Error('Poster not found');
+      }
+      
+      const posterData = posterDoc.data();
+      const posterCredits = posterData.credits || 0;
+      
+      if (posterCredits < bounty.reward) {
+        throw new Error('Insufficient credits to complete bounty');
+      }
+      
+      await updateDoc(posterRef, {
+        credits: posterCredits - bounty.reward,
+      });
+      console.log('💳 Deducted', bounty.reward, 'credits from poster');
+      
+      if (user && user.id === bounty.postedBy) {
+        const updatedUser = { ...user, credits: posterCredits - bounty.reward };
+        setUser(updatedUser);
+        await AsyncStorage.setItem('@auth_user', JSON.stringify({
+          ...updatedUser,
+          joinedDate: updatedUser.joinedDate.toISOString(),
+        }));
+      }
+      
+      const acceptedHunters = bounty.acceptedHunters || [];
+      if (acceptedHunters.length > 0) {
+        const rewardPerHunter = bounty.reward / acceptedHunters.length;
+        
+        for (const hunterId of acceptedHunters) {
+          const hunterRef = doc(db, 'users', hunterId);
+          const hunterDoc = await getDoc(hunterRef);
+          
+          if (hunterDoc.exists()) {
+            const hunterData = hunterDoc.data();
+            const hunterCredits = hunterData.credits || 0;
+            const hunterTotalEarned = hunterData.totalEarned || 0;
+            const hunterBountiesCompleted = hunterData.bountiesCompleted || 0;
+            
+            await updateDoc(hunterRef, {
+              credits: hunterCredits + rewardPerHunter,
+              totalEarned: hunterTotalEarned + rewardPerHunter,
+              bountiesCompleted: hunterBountiesCompleted + 1,
+            });
+            console.log('💰 Added', rewardPerHunter, 'credits to hunter:', hunterId);
+            
+            if (user && user.id === hunterId) {
+              const updatedUser = {
+                ...user,
+                credits: hunterCredits + rewardPerHunter,
+                totalEarned: hunterTotalEarned + rewardPerHunter,
+                bountiesCompleted: hunterBountiesCompleted + 1,
+              };
+              setUser(updatedUser);
+              await AsyncStorage.setItem('@auth_user', JSON.stringify({
+                ...updatedUser,
+                joinedDate: updatedUser.joinedDate.toISOString(),
+              }));
+            }
+            
+            if (addNotification) {
+              addNotification({
+                userId: hunterId,
+                type: 'bounty-completed',
+                title: 'Bounty Completed!',
+                message: `You earned ${rewardPerHunter.toFixed(2)} for completing "${bounty.title}"`,
+                relatedId: bountyId,
+              });
+            }
+          }
+        }
+      }
+      
+      await updateDoc(bountyRef, { status: 'completed' });
+      console.log('✅ Bounty marked as completed');
+      
+      console.log('🗑️ Starting cleanup of related messages and conversations...');
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(conversationsRef, where('bountyId', '==', bountyId));
+      const snapshot = await getDocs(q);
+      
+      let deletedConversations = 0;
+      let deletedMessages = 0;
+      
+      for (const convDoc of snapshot.docs) {
+        const messagesRef = collection(db, 'messages');
+        const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+        const msgSnapshot = await getDocs(msgQuery);
+        
+        for (const msgDoc of msgSnapshot.docs) {
+          await deleteDoc(doc(db, 'messages', msgDoc.id));
+          deletedMessages++;
+        }
+        
+        await deleteDoc(doc(db, 'conversations', convDoc.id));
+        deletedConversations++;
+      }
+      
+      console.log('🗑️ Cleanup complete:');
+      console.log('  - Deleted', deletedConversations, 'conversations');
+      console.log('  - Deleted', deletedMessages, 'messages');
+      
+      await Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]);
+      
+      console.log('✅ Bounty completion process finished successfully');
+    } catch (error) {
+      console.error('❌ Error completing bounty:', error);
+      throw error;
+    }
+  }, [user, addNotification, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations, setUser]);
+  
+  const updateBountyStatus = useCallback(async (bountyId: string, status: Bounty['status']) => {
+    try {
+      console.log('Updating bounty status:', bountyId, status);
+      
+      if (status === 'completed') {
+        await completeBounty(bountyId);
+        return;
+      }
+      
+      const db = getFirebaseFirestore();
+      const bountyRef = doc(db, 'bounties', bountyId);
+      
+      await updateDoc(bountyRef, { status });
+      
+      await Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+        loadAcceptedBounties(),
+      ]);
+      
+      console.log('Bounty status updated successfully:', bountyId, status);
+    } catch (error) {
+      console.error('Error updating bounty status:', error);
+      throw error;
+    }
+  }, [completeBounty, loadBounties, loadMyBounties, loadAcceptedBounties]);
+
+  const sendMessage = useCallback(async (conversationId: string, content: string) => {
+    try {
+      const db = getFirebaseFirestore();
+      
+      const conversationRef = doc(db, 'conversations', conversationId);
+      const conversationExists = conversations.find(c => c.id === conversationId);
+      
+      if (!conversationExists) {
+        console.error('Conversation does not exist:', conversationId);
+        throw new Error(`Conversation ${conversationId} not found. Please ensure the conversation is created before sending messages.`);
+      }
+      
+      const messageData = {
+        conversationId,
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        senderAvatar: currentUser.avatar,
+        content,
+        timestamp: Timestamp.now(),
+        read: false,
         type: 'text',
       };
 
-      setConversations(prev => [
-        newDirectConversation,
-        ...prev.filter(c => c.id !== conversationId),
-      ]);
+      console.log('Sending message to conversation:', conversationId);
+      const docRef = await addDoc(collection(db, 'messages'), messageData);
+      console.log('Message document created:', docRef.id);
 
-      setMessages(prev => ({
-        ...prev,
-        [newDirectConvId]: [initialMessage],
-      }));
+      await updateDoc(conversationRef, {
+        lastMessage: content,
+        lastMessageTime: Timestamp.now(),
+      });
+      console.log('Conversation updated with last message');
 
-      console.log('Pay request accepted, created direct conversation:', newDirectConvId);
+      const newMessage: Message = {
+        id: docRef.id,
+        ...messageData,
+        timestamp: new Date(),
+      };
+
+      const updatedMessages = {
+        ...messages,
+        [conversationId]: [...(messages[conversationId] || []), newMessage],
+      };
+      setMessages(updatedMessages);
+
+      const updatedConversations = conversations.map(c =>
+        c.id === conversationId
+          ? { ...c, lastMessage: content, lastMessageTime: new Date() }
+          : c
+      );
+      setConversations(updatedConversations);
+
+      console.log('✅ Message sent successfully:', docRef.id);
+    } catch (error: any) {
+      console.error('❌ Error sending message:', error);
+      console.error('Error details:', error?.message);
+      throw error;
     }
-  }, [conversations, messages]);
+  }, [messages, conversations, currentUser]);
+
+  const sendPayRequest = useCallback(async (conversationId: string, amount: number) => {
+    try {
+      const db = getFirebaseFirestore();
+      
+      const messageData = {
+        conversationId,
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        senderAvatar: currentUser.avatar,
+        content: '',
+        timestamp: Timestamp.now(),
+        read: false,
+        type: 'pay-request',
+        payRequest: {
+          amount,
+          status: 'pending',
+        },
+      };
+
+      const docRef = await addDoc(collection(db, 'messages'), messageData);
+
+      await updateDoc(doc(db, 'conversations', conversationId), {
+        lastMessage: `Pay request: ${amount}`,
+        lastMessageTime: Timestamp.now(),
+      });
+
+      const newMessage: Message = {
+        id: docRef.id,
+        ...messageData,
+        timestamp: new Date(),
+      };
+
+      const updatedMessages = {
+        ...messages,
+        [conversationId]: [...(messages[conversationId] || []), newMessage],
+      };
+      setMessages(updatedMessages);
+
+      const updatedConversations = conversations.map(c =>
+        c.id === conversationId
+          ? { ...c, lastMessage: `Pay request: ${amount}`, lastMessageTime: new Date() }
+          : c
+      );
+      setConversations(updatedConversations);
+
+      console.log('Pay request sent to Firebase:', docRef.id);
+    } catch (error) {
+      console.error('Error sending pay request:', error);
+      throw error;
+    }
+  }, [messages, conversations, currentUser]);
+
+  const acceptPayRequest = useCallback(async (conversationId: string, messageId: string) => {
+    const conversation = conversations.find(c => c.id === conversationId);
+    if (!conversation) return;
+
+    const acceptedMessage = messages[conversationId]?.find(m => m.id === messageId);
+    if (!acceptedMessage || !acceptedMessage.payRequest) return;
+
+    try {
+      const db = getFirebaseFirestore();
+
+      console.log('💸 Accepting pay request:', messageId, 'Amount:', acceptedMessage.payRequest.amount);
+
+      await updateDoc(doc(db, 'messages', messageId), {
+        'payRequest.status': 'accepted',
+        'payRequest.acceptedBy': currentUser.id,
+      });
+
+      const updatedMessages = {
+        ...messages,
+        [conversationId]: messages[conversationId].map(m =>
+          m.id === messageId && m.payRequest
+            ? {
+                ...m,
+                payRequest: {
+                  ...m.payRequest,
+                  status: 'accepted' as const,
+                  acceptedBy: currentUser.id,
+                },
+              }
+            : m
+        ),
+      };
+      setMessages(updatedMessages);
+
+      const otherParticipant = conversation.participants?.find(
+        p => p.id === acceptedMessage.senderId
+      );
+
+      if (otherParticipant) {
+        console.log('📝 Creating direct conversation with:', otherParticipant.name);
+        
+        const existingDirectConv = conversations.find(
+          c => c.type === 'direct' &&
+          c.participantIds?.includes(otherParticipant.id) &&
+          c.participantIds?.includes(currentUser.id) &&
+          c.bountyId === conversation.bountyId
+        );
+
+        if (existingDirectConv) {
+          console.log('✅ Direct conversation already exists:', existingDirectConv.id);
+        } else {
+          const newDirectConversationData = {
+            type: 'direct',
+            participantId: otherParticipant.id,
+            participantName: otherParticipant.name,
+            participantAvatar: otherParticipant.avatar,
+            participantIds: [currentUser.id, otherParticipant.id],
+            lastMessage: 'Pay request accepted! Let\'s get started.',
+            lastMessageTime: Timestamp.now(),
+            unreadCount: 0,
+            bountyId: conversation.bountyId,
+            bountyTitle: conversation.bountyTitle,
+            originalReward: acceptedMessage.payRequest.amount || conversation.originalReward,
+          };
+
+          const newConvRef = await addDoc(collection(db, 'conversations'), newDirectConversationData);
+          console.log('✅ Direct conversation created:', newConvRef.id);
+
+          const initialMessageData = {
+            conversationId: newConvRef.id,
+            senderId: 'system',
+            senderName: 'System',
+            senderAvatar: '',
+            content: `Pay request of ${acceptedMessage.payRequest.amount} accepted! The bounty is now assigned.`,
+            timestamp: Timestamp.now(),
+            read: true,
+            type: 'text',
+          };
+
+          await addDoc(collection(db, 'messages'), initialMessageData);
+          console.log('✅ Initial message created');
+
+          setMessages(prev => ({
+            ...prev,
+            [newConvRef.id]: [{
+              id: Date.now().toString(),
+              ...initialMessageData,
+              timestamp: new Date(),
+            }],
+          }));
+        }
+
+        console.log('🗑️ Deleting negotiation conversations for bounty:', conversation.bountyId);
+        const conversationsRef = collection(db, 'conversations');
+        const q = query(
+          conversationsRef,
+          where('bountyId', '==', conversation.bountyId),
+          where('participantIds', 'array-contains', currentUser.id)
+        );
+        const snapshot = await getDocs(q);
+        
+        for (const convDoc of snapshot.docs) {
+          const conv = convDoc.data();
+          if (conv.type === 'hunter-negotiation' || conv.type === 'poster-negotiation') {
+            console.log('🗑️ Deleting conversation:', convDoc.id, 'Type:', conv.type);
+            await deleteDoc(doc(db, 'conversations', convDoc.id));
+            
+            const messagesRef = collection(db, 'messages');
+            const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+            const msgSnapshot = await getDocs(msgQuery);
+            for (const msgDoc of msgSnapshot.docs) {
+              await deleteDoc(doc(db, 'messages', msgDoc.id));
+            }
+          }
+        }
+
+        await loadConversations();
+        console.log('✅ Pay request accepted and negotiation conversations deleted');
+      }
+    } catch (error) {
+      console.error('❌ Error accepting pay request:', error);
+      throw error;
+    }
+  }, [conversations, messages, currentUser, loadConversations]);
 
   const markConversationAsRead = useCallback((conversationId: string) => {
     const updatedConversations = conversations.map(c =>
@@ -440,116 +861,457 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [conversations, messages]);
 
-  const startNegotiation = useCallback((bountyId: string): string | null => {
+  const startNegotiation = useCallback(async (bountyId: string) => {
     const bounty = bounties.find(b => b.id === bountyId);
-    if (!bounty) return null;
+    if (!bounty) return;
 
-    const existingNegotiation = conversations.find(
-      c => c.bountyId === bountyId && c.type === 'hunter-negotiation'
-    );
-
-    if (existingNegotiation) {
-      console.log('Already negotiating this bounty');
-      return existingNegotiation.id;
-    }
-
-    const newNegotiationConvId = `conv-negotiation-${Date.now()}`;
-    const newNegotiationConversation: Conversation = {
-      id: newNegotiationConvId,
-      type: 'hunter-negotiation',
-      participants: [
-        {
-          id: bounty.postedBy,
-          name: bounty.postedByName,
-          avatar: bounty.postedByAvatar,
-          role: 'poster',
-        },
-        {
+    try {
+      const db = getFirebaseFirestore();
+      const conversationsRef = collection(db, 'conversations');
+      
+      const hunterNegotiationQuery = query(
+        conversationsRef,
+        where('bountyId', '==', bountyId),
+        where('type', '==', 'hunter-negotiation')
+      );
+      const hunterSnapshot = await getDocs(hunterNegotiationQuery);
+      
+      let hunterConversationId: string;
+      let hunterConversation: any;
+      
+      if (hunterSnapshot.empty) {
+        console.log('💬 Creating NEW hunter-negotiation group chat for bounty:', bountyId);
+        
+        const participants = [
+          {
+            id: bounty.postedBy,
+            name: bounty.postedByName,
+            avatar: bounty.postedByAvatar,
+            role: 'poster' as const,
+          },
+          {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            role: 'hunter' as const,
+          },
+        ];
+        
+        const hunterNegotiationData = {
+          type: 'hunter-negotiation',
+          participants,
+          participantIds: [bounty.postedBy, currentUser.id],
+          lastMessage: 'Started negotiation',
+          lastMessageTime: Timestamp.now(),
+          unreadCount: 0,
+          bountyId: bounty.id,
+          bountyTitle: bounty.title,
+          originalReward: bounty.reward,
+        };
+        
+        const hunterConversationDoc = await addDoc(conversationsRef, hunterNegotiationData);
+        hunterConversationId = hunterConversationDoc.id;
+        console.log('💬 Created hunter-negotiation conversation:', hunterConversationId);
+        
+        const hunterInitialMessageData = {
+          conversationId: hunterConversationId,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `Negotiation started for "${bounty.title}". Original offer: ${bounty.reward}`,
+          timestamp: Timestamp.now(),
+          read: true,
+          type: 'text',
+        };
+        
+        await addDoc(collection(db, 'messages'), hunterInitialMessageData);
+        console.log('💬 Created initial message in hunter conversation');
+      } else {
+        hunterConversation = hunterSnapshot.docs[0];
+        hunterConversationId = hunterConversation.id;
+        const existingData = hunterConversation.data();
+        
+        const alreadyParticipant = existingData.participantIds?.includes(currentUser.id);
+        
+        if (alreadyParticipant) {
+          console.log('💬 Already in hunter-negotiation group chat:', hunterConversationId);
+          await loadConversations();
+          return;
+        }
+        
+        console.log('💬 Adding hunter to existing hunter-negotiation group chat:', hunterConversationId);
+        
+        const newParticipant = {
           id: currentUser.id,
           name: currentUser.name,
           avatar: currentUser.avatar,
-          role: 'hunter',
-        },
-      ],
-      lastMessage: 'Started negotiation',
-      lastMessageTime: new Date(),
-      unreadCount: 0,
-      bountyId: bounty.id,
-      bountyTitle: bounty.title,
-      originalReward: bounty.reward,
-    };
+          role: 'hunter' as const,
+        };
+        
+        await updateDoc(doc(db, 'conversations', hunterConversationId), {
+          participants: arrayUnion(newParticipant),
+          participantIds: arrayUnion(currentUser.id),
+          lastMessage: `${currentUser.name} joined the negotiation`,
+          lastMessageTime: Timestamp.now(),
+        });
+        
+        const joinMessageData = {
+          conversationId: hunterConversationId,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `${currentUser.name} joined the negotiation`,
+          timestamp: Timestamp.now(),
+          read: true,
+          type: 'text',
+        };
+        
+        await addDoc(collection(db, 'messages'), joinMessageData);
+        console.log('💬 Added join message to hunter conversation');
+      }
+      
+      const posterNegotiationQuery = query(
+        conversationsRef,
+        where('bountyId', '==', bountyId),
+        where('type', '==', 'poster-negotiation')
+      );
+      const posterSnapshot = await getDocs(posterNegotiationQuery);
+      
+      if (posterSnapshot.empty) {
+        console.log('💬 Creating NEW poster-negotiation group chat for bounty:', bountyId);
+        
+        const participants = [
+          {
+            id: bounty.postedBy,
+            name: bounty.postedByName,
+            avatar: bounty.postedByAvatar,
+            role: 'poster' as const,
+          },
+          {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            role: 'hunter' as const,
+          },
+        ];
+        
+        const posterNegotiationData = {
+          type: 'poster-negotiation',
+          participants,
+          participantIds: [bounty.postedBy, currentUser.id],
+          lastMessage: 'Negotiation started',
+          lastMessageTime: Timestamp.now(),
+          unreadCount: 1,
+          bountyId: bounty.id,
+          bountyTitle: bounty.title,
+          originalReward: bounty.reward,
+        };
+        
+        const posterConversationDoc = await addDoc(conversationsRef, posterNegotiationData);
+        console.log('💬 Created poster-negotiation conversation:', posterConversationDoc.id);
+        
+        const posterInitialMessageData = {
+          conversationId: posterConversationDoc.id,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `${currentUser.name} wants to negotiate on "${bounty.title}". Original offer: ${bounty.reward}`,
+          timestamp: Timestamp.now(),
+          read: false,
+          type: 'text',
+        };
+        
+        await addDoc(collection(db, 'messages'), posterInitialMessageData);
+        console.log('💬 Created initial message in poster conversation');
+      } else {
+        console.log('💬 Adding hunter to existing poster-negotiation group chat');
+        const posterConversationId = posterSnapshot.docs[0].id;
+        const existingData = posterSnapshot.docs[0].data();
+        
+        const alreadyParticipant = existingData.participantIds?.includes(currentUser.id);
+        
+        if (!alreadyParticipant) {
+          const newParticipant = {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            role: 'hunter' as const,
+          };
+          
+          await updateDoc(doc(db, 'conversations', posterConversationId), {
+            participants: arrayUnion(newParticipant),
+            participantIds: arrayUnion(currentUser.id),
+            lastMessage: `${currentUser.name} joined the negotiation`,
+            lastMessageTime: Timestamp.now(),
+          });
+          
+          const joinMessageData = {
+            conversationId: posterConversationId,
+            senderId: 'system',
+            senderName: 'System',
+            senderAvatar: '',
+            content: `${currentUser.name} joined the negotiation`,
+            timestamp: Timestamp.now(),
+            read: true,
+            type: 'text',
+          };
+          
+          await addDoc(collection(db, 'messages'), joinMessageData);
+          console.log('💬 Added join message to poster conversation');
+        }
+      }
+      
+      await loadConversations();
+      await loadMessagesForConversation(hunterConversationId);
+      
+      if (addNotification) {
+        addNotification({
+          userId: bounty.postedBy,
+          type: 'negotiation-started',
+          title: 'Negotiation Started',
+          message: `${currentUser.name} wants to negotiate on your bounty: "${bounty.title}"`,
+          relatedId: bountyId,
+        });
+      }
+      
+      console.log('✅ Started/joined negotiation for bounty:', bountyId);
+    } catch (error) {
+      console.error('❌ Error starting negotiation:', error);
+      throw error;
+    }
+  }, [bounties, conversations, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
 
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: newNegotiationConvId,
-      senderId: 'system',
-      senderName: 'System',
-      senderAvatar: '',
-      content: `Negotiation started for "${bounty.title}". Original offer: $${bounty.reward}`,
-      timestamp: new Date(),
-      read: true,
-      type: 'text',
-    };
-
-    setConversations(prev => [newNegotiationConversation, ...prev]);
-    setMessages(prev => ({
-      ...prev,
-      [newNegotiationConvId]: [initialMessage],
-    }));
-
-    console.log('Started negotiation for bounty:', bountyId);
-    return newNegotiationConvId;
-  }, [bounties, conversations, currentUser]);
-
-  const cancelBounty = useCallback((bountyId: string) => {
-    const updatedAccepted = acceptedBounties.filter(id => id !== bountyId);
-    setAcceptedBounties(updatedAccepted);
-
-    const updatedApplied = myAppliedBounties.filter(id => id !== bountyId);
-    setMyAppliedBounties(updatedApplied);
-
-    const directConv = conversations.find(
-      c => c.bountyId === bountyId && c.type === 'direct'
-    );
-    if (directConv) {
-      setConversations(prev => prev.filter(c => c.id !== directConv.id));
+  const cancelBounty = useCallback(async (bountyId: string) => {
+    if (!user) {
+      throw new Error('User not authenticated');
     }
 
-    saveData(undefined, undefined, updatedApplied, updatedAccepted);
-    console.log('Bounty cancelled:', bountyId);
-  }, [acceptedBounties, myAppliedBounties, conversations]);
+    try {
+      console.log('Cancelling accepted bounty:', bountyId);
+      
+      const db = getFirebaseFirestore();
+      const bountyRef = doc(db, 'bounties', bountyId);
+      
+      await updateDoc(bountyRef, {
+        acceptedHunters: arrayRemove(user.id),
+        applicants: (bounties.find(b => b.id === bountyId)?.applicants || 1) - 1,
+      });
+      
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(conversationsRef, where('bountyId', '==', bountyId), where('participantIds', 'array-contains', user.id));
+      const snapshot = await getDocs(q);
+      
+      for (const conversationDoc of snapshot.docs) {
+        await deleteDoc(doc(db, 'conversations', conversationDoc.id));
+        
+        const messagesRef = collection(db, 'messages');
+        const msgQuery = query(messagesRef, where('conversationId', '==', conversationDoc.id));
+        const msgSnapshot = await getDocs(msgQuery);
+        for (const msgDoc of msgSnapshot.docs) {
+          await deleteDoc(doc(db, 'messages', msgDoc.id));
+        }
+      }
+      
+      await Promise.all([
+        loadBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]);
+      
+      console.log('Bounty cancelled successfully:', bountyId);
+    } catch (error) {
+      console.error('Error cancelling bounty:', error);
+      throw error;
+    }
+  }, [user, bounties, loadBounties, loadAcceptedBounties, loadConversations]);
 
-  const deleteBounty = useCallback((bountyId: string) => {
-    const updatedBounties = bounties.filter(b => b.id !== bountyId);
-    setBounties(updatedBounties);
-
-    const updatedMyBounties = myPostedBounties.filter(b => b.id !== bountyId);
-    setMyPostedBounties(updatedMyBounties);
-
-    const updatedAccepted = acceptedBounties.filter(id => id !== bountyId);
-    setAcceptedBounties(updatedAccepted);
-
-    const updatedApplied = myAppliedBounties.filter(id => id !== bountyId);
-    setMyAppliedBounties(updatedApplied);
-
-    const relatedConvs = conversations.filter(c => c.bountyId === bountyId);
-    if (relatedConvs.length > 0) {
-      setConversations(prev => prev.filter(c => c.bountyId !== bountyId));
+  const deleteBounty = useCallback(async (bountyId: string) => {
+    if (!user) {
+      throw new Error('User not authenticated');
     }
 
-    saveData(updatedBounties, updatedMyBounties, updatedApplied, updatedAccepted);
-    console.log('Bounty deleted:', bountyId);
-  }, [bounties, myPostedBounties, acceptedBounties, myAppliedBounties, conversations]);
+    try {
+      console.log('Deleting bounty:', bountyId);
+      
+      const db = getFirebaseFirestore();
+      
+      const conversationsRef = collection(db, 'conversations');
+      const q = query(conversationsRef, where('bountyId', '==', bountyId));
+      const snapshot = await getDocs(q);
+      
+      for (const conversationDoc of snapshot.docs) {
+        const messagesRef = collection(db, 'messages');
+        const msgQuery = query(messagesRef, where('conversationId', '==', conversationDoc.id));
+        const msgSnapshot = await getDocs(msgQuery);
+        for (const msgDoc of msgSnapshot.docs) {
+          await deleteDoc(doc(db, 'messages', msgDoc.id));
+        }
+        await deleteDoc(doc(db, 'conversations', conversationDoc.id));
+      }
+      
+      await deleteDoc(doc(db, 'bounties', bountyId));
+      
+      await Promise.all([
+        loadBounties(),
+        loadMyBounties(),
+        loadAcceptedBounties(),
+        loadConversations(),
+      ]);
+      
+      console.log('Bounty deleted successfully:', bountyId);
+    } catch (error) {
+      console.error('Error deleting bounty:', error);
+      throw error;
+    }
+  }, [user, loadBounties, loadMyBounties, loadAcceptedBounties, loadConversations]);
 
-  return useMemo(() => ({
+  const createDirectConversation = useCallback(async (
+    otherUserId: string, 
+    otherUserName: string, 
+    otherUserAvatar: string, 
+    bountyId?: string, 
+    bountyTitle?: string,
+    originalReward?: number,
+    negotiationConversationId?: string
+  ) => {
+    try {
+      const db = getFirebaseFirestore();
+      
+      const existingConversation = conversations.find(
+        c => c.type === 'direct' && 
+        c.participantIds?.includes(otherUserId) && 
+        c.participantIds?.includes(currentUser.id) &&
+        (!bountyId || c.bountyId === bountyId)
+      );
+      
+      if (existingConversation) {
+        console.log('✅ Direct conversation already exists:', existingConversation.id);
+        
+        if (negotiationConversationId && bountyId) {
+          console.log('🗑️ Deleting ALL negotiation conversations for bounty:', bountyId);
+          const conversationsRef = collection(db, 'conversations');
+          const q = query(
+            conversationsRef,
+            where('bountyId', '==', bountyId)
+          );
+          const snapshot = await getDocs(q);
+          
+          for (const convDoc of snapshot.docs) {
+            const conv = convDoc.data();
+            if (conv.type === 'hunter-negotiation' || conv.type === 'poster-negotiation') {
+              console.log('🗑️ Deleting conversation:', convDoc.id, 'Type:', conv.type);
+              await deleteDoc(doc(db, 'conversations', convDoc.id));
+              
+              const messagesRef = collection(db, 'messages');
+              const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+              const msgSnapshot = await getDocs(msgQuery);
+              for (const msgDoc of msgSnapshot.docs) {
+                await deleteDoc(doc(db, 'messages', msgDoc.id));
+              }
+            }
+          }
+          
+          if (bountyId) {
+            const bountyRef = doc(db, 'bounties', bountyId);
+            await updateDoc(bountyRef, {
+              acceptedHunters: arrayUnion(currentUser.id),
+            });
+            console.log('✅ Added hunter to acceptedHunters');
+          }
+          
+          await loadConversations();
+          await loadBounties();
+          await loadAcceptedBounties();
+        }
+        
+        return existingConversation.id;
+      }
+      
+      console.log('📝 Creating new direct conversation');
+      const conversationData = {
+        type: 'direct' as const,
+        participantId: otherUserId,
+        participantName: otherUserName,
+        participantAvatar: otherUserAvatar,
+        participantIds: [currentUser.id, otherUserId],
+        bountyId: bountyId || null,
+        bountyTitle: bountyTitle || null,
+        originalReward: originalReward || 0,
+        lastMessage: 'Bounty accepted at original price!',
+        lastMessageTime: Timestamp.now(),
+        unreadCount: 0,
+      };
+      
+      const conversationsRef = collection(db, 'conversations');
+      const conversationDoc = await addDoc(conversationsRef, conversationData);
+      console.log('✅ Direct conversation created:', conversationDoc.id);
+      
+      const initialMessageData = {
+        conversationId: conversationDoc.id,
+        senderId: 'system',
+        senderName: 'System',
+        senderAvatar: '',
+        content: `Bounty accepted at original price of ${originalReward}! The job is now assigned.`,
+        timestamp: Timestamp.now(),
+        read: true,
+        type: 'text',
+      };
+      
+      await addDoc(collection(db, 'messages'), initialMessageData);
+      console.log('✅ Initial message created');
+      
+      if (negotiationConversationId && bountyId) {
+        console.log('🗑️ Deleting ALL negotiation conversations for bounty:', bountyId);
+        const q = query(
+          conversationsRef,
+          where('bountyId', '==', bountyId)
+        );
+        const snapshot = await getDocs(q);
+        
+        for (const convDoc of snapshot.docs) {
+          const conv = convDoc.data();
+          if (conv.type === 'hunter-negotiation' || conv.type === 'poster-negotiation') {
+            console.log('🗑️ Deleting conversation:', convDoc.id, 'Type:', conv.type);
+            await deleteDoc(doc(db, 'conversations', convDoc.id));
+            
+            const messagesRef = collection(db, 'messages');
+            const msgQuery = query(messagesRef, where('conversationId', '==', convDoc.id));
+            const msgSnapshot = await getDocs(msgQuery);
+            for (const msgDoc of msgSnapshot.docs) {
+              await deleteDoc(doc(db, 'messages', msgDoc.id));
+            }
+          }
+        }
+        
+        const bountyRef = doc(db, 'bounties', bountyId);
+        await updateDoc(bountyRef, {
+          acceptedHunters: arrayUnion(currentUser.id),
+        });
+        console.log('✅ Added hunter to acceptedHunters');
+      }
+      
+      await loadConversations();
+      await loadBounties();
+      await loadAcceptedBounties();
+      
+      return conversationDoc.id;
+    } catch (error: any) {
+      console.error('❌ Error creating direct conversation:', error);
+      console.error('Error details:', error?.message);
+      throw error;
+    }
+  }, [conversations, currentUser, loadConversations, loadBounties, loadAcceptedBounties]);
+
+  return {
     bounties,
     myPostedBounties,
+    acceptedBountiesList,
     myAppliedBounties,
     acceptedBounties,
     conversations,
     messages,
     reviews,
-    isLoading,
+    isLoading: isLoading,
     addBounty,
     applyToBounty,
     updateBountyStatus,
@@ -564,29 +1326,9 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     currentUser,
     setConversations,
     setMessages,
-  }), [
-    bounties,
-    myPostedBounties,
-    myAppliedBounties,
-    acceptedBounties,
-    conversations,
-    messages,
-    reviews,
-    isLoading,
-    addBounty,
-    applyToBounty,
-    updateBountyStatus,
-    sendMessage,
-    sendPayRequest,
-    acceptPayRequest,
-    markConversationAsRead,
-    startNegotiation,
-    cancelBounty,
-    deleteBounty,
-    addReview,
-    setConversations,
-    setMessages,
-  ]);
+    loadMessagesForConversation,
+    createDirectConversation,
+  };
 });
 
 export const useFilteredBounties = (
