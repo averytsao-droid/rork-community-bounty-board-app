@@ -1,14 +1,12 @@
 import { useEffect } from 'react';
 import { Tabs, useRouter } from "expo-router";
 import { Platform, View, Text, StyleSheet, Linking, TouchableOpacity } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, PlusCircle, Briefcase, User, MessageCircle, MessageSquare } from "lucide-react-native";
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function TabLayout() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -20,23 +18,14 @@ export default function TabLayout() {
     return null;
   }
 
-  const handleContactPress = async () => {
+  const handleContactPress = () => {
     const phoneNumber = '2028237791';
-    try {
-      // Use sms: scheme which works on both iOS and Android
-      // iOS: Opens Messages app with number pre-filled
-      // Android: Opens default SMS app with number pre-filled
-      const smsUrl = `sms:${phoneNumber}`;
-      const canOpen = await Linking.canOpenURL(smsUrl);
-      if (canOpen) {
-        await Linking.openURL(smsUrl);
-      } else {
-        // Fallback: try tel: if SMS doesn't work
-        await Linking.openURL(`tel:${phoneNumber}`);
-      }
-    } catch (error) {
-      console.error('Error opening SMS app:', error);
-    }
+    const smsUrl = Platform.select({
+      ios: `sms:${phoneNumber}`,
+      android: `sms:${phoneNumber}`,
+      default: `sms:${phoneNumber}`,
+    });
+    Linking.openURL(smsUrl);
   };
 
   return (
@@ -45,15 +34,14 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#8B5CF6',
         tabBarInactiveTintColor: '#9CA3AF',
         headerShown: true,
-        headerStatusBarHeight: insets.top,
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: '#E5E7EB',
-          paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 8),
+          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
           paddingTop: 32,
           paddingHorizontal: 8,
-          height: Platform.OS === 'ios' ? 110 + insets.bottom : 94 + insets.bottom,
+          height: Platform.OS === 'ios' ? 110 : 94,
         },
         tabBarLabelStyle: {
           fontSize: 9,
