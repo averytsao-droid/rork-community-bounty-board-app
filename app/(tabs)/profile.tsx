@@ -29,9 +29,14 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               console.log('Logging out...');
-              await logout();
-              console.log('Logout successful, navigating to login...');
-              router.replace('/login');
+              const success = await logout();
+              if (success) {
+                console.log('Logout successful, navigating to login...');
+                router.replace('/login');
+              } else {
+                console.error('Logout failed');
+                Alert.alert('Error', 'Failed to logout. Please try again.');
+              }
             } catch (error) {
               console.error('Error during logout:', error);
               Alert.alert('Error', 'Failed to logout. Please try again.');

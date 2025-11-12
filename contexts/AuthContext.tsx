@@ -235,9 +235,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       const auth = getFirebaseAuth();
       await signOut(auth);
+      setUser(null);
+      setNotifications([]);
+      await AsyncStorage.removeItem(STORAGE_KEY);
       console.log('Firebase logout success');
+      return true;
     } catch (error) {
       console.error('Logout failed:', error);
+      return false;
     }
   }, []);
 
