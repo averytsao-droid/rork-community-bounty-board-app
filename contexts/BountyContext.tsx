@@ -351,28 +351,30 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       const acceptedHunters = bounty.acceptedHunters || [];
       const allHunters = [...acceptedHunters, currentUser.id];
 
-      const participants = [
-        {
-          id: bounty.postedBy,
-          name: bounty.postedByName,
-          avatar: bounty.postedByAvatar,
-          role: 'poster' as const,
-        },
-        ...allHunters.map(hunterId => ({
-          id: hunterId,
-          name: hunterId === currentUser.id ? currentUser.name : 'Hunter',
-          avatar: hunterId === currentUser.id ? currentUser.avatar : 'https://i.pravatar.cc/150',
-          role: 'hunter' as const,
-        })),
-      ];
+      let participants;
+      if (huntersNeeded > 1) {
+        participants = [
+          {
+            id: bounty.postedBy,
+            name: bounty.postedByName,
+            avatar: bounty.postedByAvatar,
+            role: 'poster' as const,
+          },
+          ...allHunters.map(hunterId => ({
+            id: hunterId,
+            name: hunterId === currentUser.id ? currentUser.name : 'Hunter',
+            avatar: hunterId === currentUser.id ? currentUser.avatar : 'https://i.pravatar.cc/150',
+            role: 'hunter' as const,
+          })),
+        ];
+      }
 
-      const conversationData = {
+      const conversationData: any = {
         type: 'direct' as const,
         participantId: bounty.postedBy,
         participantName: bounty.postedByName,
         participantAvatar: bounty.postedByAvatar,
         participantIds: [currentUser.id, bounty.postedBy],
-        participants: huntersNeeded > 1 ? participants : undefined,
         bountyId: bounty.id,
         bountyTitle: bounty.title,
         originalReward: bounty.reward,
@@ -382,6 +384,10 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         lastMessageTime: Timestamp.now(),
         unreadCount: 0,
       };
+      
+      if (participants) {
+        conversationData.participants = participants;
+      }
 
       const conversationsRef = collection(db, 'conversations');
       const conversationDoc = await addDoc(conversationsRef, conversationData);

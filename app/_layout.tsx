@@ -22,10 +22,13 @@ function RootLayoutNav() {
     if (!isInitialized) return;
 
     const inAuthGroup = segments[0] === '(tabs)';
+    const isAuthScreen = segments[0] === 'login' || segments[0] === 'register';
 
     if (!isAuthenticated && inAuthGroup) {
+      console.log('User not authenticated, redirecting to login');
       router.replace('/login');
-    } else if (isAuthenticated && !inAuthGroup) {
+    } else if (isAuthenticated && (isAuthScreen || (!inAuthGroup && segments.length === 0))) {
+      console.log('User authenticated, redirecting to tabs');
       router.replace('/(tabs)');
     }
   }, [isAuthenticated, segments, isInitialized, router]);
