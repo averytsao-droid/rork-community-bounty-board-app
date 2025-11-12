@@ -804,68 +804,136 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     const bounty = bounties.find(b => b.id === bountyId);
     if (!bounty) return;
 
-    const existingNegotiation = conversations.find(
-      c => c.bountyId === bountyId && c.type === 'hunter-negotiation' && c.participantIds?.includes(currentUser.id)
-    );
-
-    if (existingNegotiation) {
-      console.log('💬 Already negotiating this bounty, returning existing conversation');
-      return;
-    }
-
     try {
       const db = getFirebaseFirestore();
-
-      const participants = [
-        {
-          id: bounty.postedBy,
-          name: bounty.postedByName,
-          avatar: bounty.postedByAvatar,
-          role: 'poster' as const,
-        },
-        {
+      const conversationsRef = collection(db, 'conversations');
+      
+      const hunterNegotiationQuery = query(
+        conversationsRef,
+        where('bountyId', '==', bountyId),
+        where('type', '==', 'hunter-negotiation')
+      );
+      const hunterSnapshot = await getDocs(hunterNegotiationQuery);
+      
+      let hunterConversationId: string;
+      let hunterConversation: any;
+      
+      if (hunterSnapshot.empty) {
+        console.log('💬 Creating NEW hunter-negotiation group chat for bounty:', bountyId);
+        
+        const participants = [
+          {
+            id: bounty.postedBy,
+            name: bounty.postedByName,
+            avatar: bounty.postedByAvatar,
+            role: 'poster' as const,
+          },
+          {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            role: 'hunter' as const,
+          },
+        ];
+        
+        const hunterNegotiationData = {
+          type: 'hunter-negotiation',
+          participants,
+          participantIds: [bounty.postedBy, currentUser.id],
+          lastMessage: 'Started negotiation',
+          lastMessageTime: Timestamp.now(),
+          unreadCount: 0,
+          bountyId: bounty.id,
+          bountyTitle: bounty.title,
+          originalReward: bounty.reward,
+        };
+        
+        const hunterConversationDoc = await addDoc(conversationsRef, hunterNegotiationData);
+        hunterConversationId = hunterConversationDoc.id;
+        console.log('💬 Created hunter-negotiation conversation:', hunterConversationId);
+        
+        const hunterInitialMessageData = {
+          conversationId: hunterConversationId,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `Negotiation started for "${bounty.title}". Original offer: ${bounty.reward}`,
+          timestamp: Timestamp.now(),
+          read: true,
+          type: 'text',
+        };
+        
+        await addDoc(collection(db, 'messages'), hunterInitialMessageData);
+        console.log('💬 Created initial message in hunter conversation');
+      } else {
+        hunterConversation = hunterSnapshot.docs[0];
+        hunterConversationId = hunterConversation.id;
+        const existingData = hunterConversation.data();
+        
+        const alreadyParticipant = existingData.participantIds?.includes(currentUser.id);
+        
+        if (alreadyParticipant) {
+          console.log('💬 Already in hunter-negotiation group chat:', hunterConversationId);
+          await loadConversations();
+          return;
+        }
+        
+        console.log('💬 Adding hunter to existing hunter-negotiation group chat:', hunterConversationId);
+        
+        const newParticipant = {
           id: currentUser.id,
           name: currentUser.name,
           avatar: currentUser.avatar,
           role: 'hunter' as const,
-        },
-      ];
-
-      const hunterNegotiationData = {
-        type: 'hunter-negotiation',
-        participants,
-        participantIds: [bounty.postedBy, currentUser.id],
-        lastMessage: 'Started negotiation',
-        lastMessageTime: Timestamp.now(),
-        unreadCount: 0,
-        bountyId: bounty.id,
-        bountyTitle: bounty.title,
-        originalReward: bounty.reward,
-      };
-
-      const conversationsRef = collection(db, 'conversations');
-      const hunterConversationDoc = await addDoc(conversationsRef, hunterNegotiationData);
-      console.log('💬 Created hunter-negotiation conversation:', hunterConversationDoc.id);
-
-      const hunterInitialMessageData = {
-        conversationId: hunterConversationDoc.id,
-        senderId: 'system',
-        senderName: 'System',
-        senderAvatar: '',
-        content: `Negotiation started for "${bounty.title}". Original offer: ${bounty.reward}`,
-        timestamp: Timestamp.now(),
-        read: true,
-        type: 'text',
-      };
-
-      await addDoc(collection(db, 'messages'), hunterInitialMessageData);
-      console.log('💬 Created initial message in hunter conversation');
-
-      const existingPosterNegotiation = conversations.find(
-        c => c.bountyId === bountyId && c.type === 'poster-negotiation'
+        };
+        
+        await updateDoc(doc(db, 'conversations', hunterConversationId), {
+          participants: arrayUnion(newParticipant),
+          participantIds: arrayUnion(currentUser.id),
+          lastMessage: `${currentUser.name} joined the negotiation`,
+          lastMessageTime: Timestamp.now(),
+        });
+        
+        const joinMessageData = {
+          conversationId: hunterConversationId,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          content: `${currentUser.name} joined the negotiation`,
+          timestamp: Timestamp.now(),
+          read: true,
+          type: 'text',
+        };
+        
+        await addDoc(collection(db, 'messages'), joinMessageData);
+        console.log('💬 Added join message to hunter conversation');
+      }
+      
+      const posterNegotiationQuery = query(
+        conversationsRef,
+        where('bountyId', '==', bountyId),
+        where('type', '==', 'poster-negotiation')
       );
-
-      if (!existingPosterNegotiation) {
+      const posterSnapshot = await getDocs(posterNegotiationQuery);
+      
+      if (posterSnapshot.empty) {
+        console.log('💬 Creating NEW poster-negotiation group chat for bounty:', bountyId);
+        
+        const participants = [
+          {
+            id: bounty.postedBy,
+            name: bounty.postedByName,
+            avatar: bounty.postedByAvatar,
+            role: 'poster' as const,
+          },
+          {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            role: 'hunter' as const,
+          },
+        ];
+        
         const posterNegotiationData = {
           type: 'poster-negotiation',
           participants,
@@ -877,10 +945,10 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
           bountyTitle: bounty.title,
           originalReward: bounty.reward,
         };
-
+        
         const posterConversationDoc = await addDoc(conversationsRef, posterNegotiationData);
         console.log('💬 Created poster-negotiation conversation:', posterConversationDoc.id);
-
+        
         const posterInitialMessageData = {
           conversationId: posterConversationDoc.id,
           senderId: 'system',
@@ -891,14 +959,50 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
           read: false,
           type: 'text',
         };
-
+        
         await addDoc(collection(db, 'messages'), posterInitialMessageData);
         console.log('💬 Created initial message in poster conversation');
+      } else {
+        console.log('💬 Adding hunter to existing poster-negotiation group chat');
+        const posterConversationId = posterSnapshot.docs[0].id;
+        const existingData = posterSnapshot.docs[0].data();
+        
+        const alreadyParticipant = existingData.participantIds?.includes(currentUser.id);
+        
+        if (!alreadyParticipant) {
+          const newParticipant = {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+            role: 'hunter' as const,
+          };
+          
+          await updateDoc(doc(db, 'conversations', posterConversationId), {
+            participants: arrayUnion(newParticipant),
+            participantIds: arrayUnion(currentUser.id),
+            lastMessage: `${currentUser.name} joined the negotiation`,
+            lastMessageTime: Timestamp.now(),
+          });
+          
+          const joinMessageData = {
+            conversationId: posterConversationId,
+            senderId: 'system',
+            senderName: 'System',
+            senderAvatar: '',
+            content: `${currentUser.name} joined the negotiation`,
+            timestamp: Timestamp.now(),
+            read: true,
+            type: 'text',
+          };
+          
+          await addDoc(collection(db, 'messages'), joinMessageData);
+          console.log('💬 Added join message to poster conversation');
+        }
       }
-
+      
       await loadConversations();
-      await loadMessagesForConversation(hunterConversationDoc.id);
-
+      await loadMessagesForConversation(hunterConversationId);
+      
       if (addNotification) {
         addNotification({
           userId: bounty.postedBy,
@@ -908,8 +1012,8 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
           relatedId: bountyId,
         });
       }
-
-      console.log('✅ Started negotiation for bounty:', bountyId);
+      
+      console.log('✅ Started/joined negotiation for bounty:', bountyId);
     } catch (error) {
       console.error('❌ Error starting negotiation:', error);
       throw error;
