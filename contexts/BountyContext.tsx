@@ -1302,7 +1302,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     }
   }, [conversations, currentUser, loadConversations, loadBounties, loadAcceptedBounties]);
 
-  return useMemo(() => ({
+  return {
     bounties,
     myPostedBounties,
     acceptedBountiesList,
@@ -1328,32 +1328,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     setMessages,
     loadMessagesForConversation,
     createDirectConversation,
-  }), [
-    bounties,
-    myPostedBounties,
-    acceptedBountiesList,
-    myAppliedBounties,
-    acceptedBounties,
-    conversations,
-    messages,
-    reviews,
-    isLoading,
-    user,
-    currentUser,
-    addBounty,
-    applyToBounty,
-    updateBountyStatus,
-    sendMessage,
-    sendPayRequest,
-    acceptPayRequest,
-    markConversationAsRead,
-    startNegotiation,
-    cancelBounty,
-    deleteBounty,
-    addReview,
-    loadMessagesForConversation,
-    createDirectConversation,
-  ]);
+  };
 });
 
 export const useFilteredBounties = (
