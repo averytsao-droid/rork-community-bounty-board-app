@@ -12,13 +12,16 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, ArrowLeft, Users, DollarSign, ExternalLink } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { Conversation, ConversationType, Message } from '@/types';
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
   const { conversations, messages, sendMessage, sendPayRequest, acceptPayRequest, markConversationAsRead, currentUser, bounties, myPostedBounties, setConversations, setMessages, loadMessagesForConversation, createDirectConversation } = useBountyContext();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -34,6 +37,15 @@ export default function MessagesScreen() {
       }
     }
   }, [conversations]);
+
+  useEffect(() => {
+    if (params.conversationId && conversations.length > 0) {
+      const conversation = conversations.find(c => c.id === params.conversationId);
+      if (conversation) {
+        handleConversationSelect(conversation);
+      }
+    }
+  }, [params.conversationId, conversations]);
 
   const formatTime = (date: Date) => {
     const now = new Date();
@@ -118,7 +130,7 @@ export default function MessagesScreen() {
   };
 
   const renderConversationList = () => (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, selectedTab === 'direct' && styles.tabActive]}

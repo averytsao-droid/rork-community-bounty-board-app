@@ -29,14 +29,22 @@ export default function BrowseBountiesScreen() {
   const categories = Object.keys(categoryLabels);
   const durations = Object.keys(durationLabels);
 
-  const handleAcceptBounty = (bounty: Bounty) => {
-    applyToBounty(bounty.id);
-    router.push('/messages');
+  const handleAcceptBounty = async (bounty: Bounty) => {
+    try {
+      await applyToBounty(bounty.id);
+      router.push('/(tabs)/messages');
+    } catch (error) {
+      console.error('Error accepting bounty:', error);
+    }
   };
 
-  const handleNegotiate = (bounty: Bounty) => {
-    startNegotiation(bounty.id);
-    router.push('/messages');
+  const handleNegotiate = async (bounty: Bounty) => {
+    try {
+      await startNegotiation(bounty.id);
+      router.push('/(tabs)/messages');
+    } catch (error) {
+      console.error('Error starting negotiation:', error);
+    }
   };
 
   const renderBountyCard = (bounty: Bounty) => {

@@ -28,18 +28,17 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Logging out...');
-              const success = await logout();
-              if (success) {
-                console.log('Logout successful, navigating to login...');
-                router.replace('/login');
-              } else {
-                console.error('Logout failed');
-                Alert.alert('Error', 'Failed to logout. Please try again.');
-              }
+              console.log('🔓 Starting logout process...');
+              
+              await logout();
+              console.log('🔓 Logout completed');
+              
+              router.replace('/login');
+              console.log('🔓 Navigation to login completed');
             } catch (error) {
-              console.error('Error during logout:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
+              console.error('❌ Error during logout:', error);
+              
+              router.replace('/login');
             }
           },
         },
