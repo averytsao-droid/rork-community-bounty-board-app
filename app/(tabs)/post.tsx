@@ -7,11 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
-  Linking,
+  Share,
   Platform,
+  Linking,
+  Clipboard,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { ChevronDown, DollarSign, Clock, Tag, Users, Share2, RotateCcw } from 'lucide-react-native';
+import { ChevronDown, DollarSign, Clock, Tag, Users, Share2 } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { bountyTemplates, categoryLabels, durationLabels } from '@/mocks/bounties';
 import { BountyCategory, BountyTemplate, TimeDuration } from '@/types';
@@ -43,50 +45,92 @@ export default function PostBountyScreen() {
     setShowTemplates(false);
   };
 
-  const handleClear = () => {
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm('Are you sure you want to clear all fields?');
-      if (!confirmed) return;
-    }
+  const generateFizzPost = (bountyTitle: string, bountyDescription: string, bountyReward: number, bountyCategory: BountyCategory | null) => {
+    const categoryText = bountyCategory ? `\nCategory: ${categoryLabels[bountyCategory]}` : '';
+    const appLink = 'https://rork.com/community-bounty-board'; // Update with your actual app link
+    
+    return `💰 BOUNTY OPPORTUNITY 💰
 
-    const clearForm = () => {
-      setTitle('');
-      setDescription('');
-      setReward('');
-      setDuration('short');
-      setTags('');
-      setCategory(null);
-      setSelectedTemplate(null);
-      setHuntersNeeded('1');
-      setPostToFizz(false);
-    };
+${bountyTitle}
 
-    if (Platform.OS === 'web') {
-      clearForm();
-    } else {
+${bountyDescription}
+
+Reward: $${bountyReward}${categoryText}
+
+Interested? Check it out on the Community Bounty Board app:
+${appLink}
+
+#Bounty #Dartmouth #Community`;
+  };
+
+  const handleFizzPost = async (bountyTitle: string, bountyDescription: string, bountyReward: number, bountyCategory: BountyCategory | null) => {
+    const fizzPostText = generateFizzPost(bountyTitle, bountyDescription, bountyReward, bountyCategory);
+    
+    try {
+      // Copy to clipboard first (using React Native's Clipboard)
+      Clipboard.setString(fizzPostText);
+      
+      // Try to open Fizz app directly (iOS: fizz://, Android: might need package name)
+      const fizzUrl = Platform.select({
+        ios: 'fizz://',
+        android: 'intent://#Intent;package=com.fizz.app;end', // Update with actual Fizz package name if known
+        default: 'fizz://',
+      });
+      
+      try {
+        const canOpen = await Linking.canOpenURL(fizzUrl);
+        if (canOpen) {
+          await Linking.openURL(fizzUrl);
+          Alert.alert(
+            'Fizz Post Ready!',
+            'The post has been copied to your clipboard and Fizz is opening. Just paste it in!',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      } catch (error) {
+        console.log('Could not open Fizz app directly:', error);
+      }
+      
+      // Fallback: Use Share API which will show share sheet
+      try {
+        const result = await Share.share({
+          message: fizzPostText,
+          title: 'Share Bounty on Fizz',
+        });
+        
+        if (result.action === Share.sharedAction) {
+          Alert.alert(
+            'Shared!',
+            'Your bounty post has been shared. It was also copied to your clipboard.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Post Copied!',
+            'The Fizz post has been copied to your clipboard. Open Fizz and paste it to share!',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        // If Share API fails, just show clipboard message
+        Alert.alert(
+          'Post Copied!',
+          'The Fizz post has been copied to your clipboard. Open Fizz and paste it to share!',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error preparing Fizz post:', error);
       Alert.alert(
-        'Clear Form',
-        'Are you sure you want to clear all fields?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          },
-          {
-            text: 'Clear',
-            style: 'destructive',
-            onPress: clearForm
-          }
-        ]
+        'Error',
+        'Could not prepare Fizz post. Please try again.',
+        [{ text: 'OK' }]
       );
     }
   };
 
   const handleSubmit = async () => {
-    console.log('============================================');
-    console.log('POST BOUNTY FORM SUBMITTED');
-    console.log('============================================');
-    
     if (!title.trim()) {
       Alert.alert('Error', 'Please enter a title');
       return;
@@ -107,8 +151,7 @@ export default function PostBountyScreen() {
 
     const huntersCount = Number(huntersNeeded) || 1;
 
-    console.log('Form validation passed');
-    console.log('Prepared bounty data:', {
+    addBounty({
       title: title.trim(),
       description: description.trim(),
       category,
@@ -120,88 +163,28 @@ export default function PostBountyScreen() {
       acceptedHunters: [],
     });
 
-    try {
-      console.log('Calling addBounty()...');
-      await addBounty({
-        title: title.trim(),
-        description: description.trim(),
-        category,
-        reward: Number(reward),
-        status: 'open',
-        duration,
-        tags: tagArray,
-        huntersNeeded: huntersCount,
-        acceptedHunters: [],
-      });
-      console.log('✓ addBounty() completed successfully');
-
-      if (postToFizz) {
-        const fizzText = encodeURIComponent(`${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}`);
-        const fizzUrl = `https://fizz.social/post?text=${fizzText}`;
-        
-        Linking.canOpenURL(fizzUrl).then((supported) => {
-          if (supported) {
-            Linking.openURL(fizzUrl);
-          } else {
-            console.log('Creating Fizz post:', {
-              title: title.trim(),
-              reward: Number(reward),
-              description: description.trim(),
-            });
-            Alert.alert(
-              'Fizz Not Available',
-              `Your bounty has been posted! To share on Fizz, please copy this text and post manually:\n\n"${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}"`,
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Copy Text',
-                  onPress: async () => {
-                    if (Platform.OS === 'web') {
-                      navigator.clipboard.writeText(`${title.trim()} - Paying ¢${Number(reward)}\n\n${description.trim()}`);
-                    }
-                  }
-                }
-              ]
-            );
-          }
-        });
-      }
-
-      console.log('============================================');
-      console.log('BOUNTY POST SUCCESSFUL!');
-      console.log('============================================');
-      
-      Alert.alert('Success', 'Bounty posted successfully!');
-
-      setTitle('');
-      setDescription('');
-      setReward('');
-      setDuration('short');
-      setTags('');
-      setCategory(null);
-      setSelectedTemplate(null);
-      setHuntersNeeded('1');
-      setPostToFizz(false);
-
-      router.push('/(tabs)');
-    } catch (error: any) {
-      console.log('============================================');
-      console.log('BOUNTY POST FAILED!');
-      console.log('============================================');
-      console.error('Error in handleSubmit:', error);
-      console.error('Error message:', error?.message);
-      console.error('Error stack:', error?.stack);
-      console.error('Error stringified:', JSON.stringify(error, null, 2));
-      
-      let errorMessage = 'Failed to create bounty. Please try again.';
-      if (error?.message) {
-        errorMessage = error.message;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-      
-      Alert.alert('Error', errorMessage);
+    // Handle Fizz post if enabled
+    if (postToFizz) {
+      await handleFizzPost(title.trim(), description.trim(), Number(reward), category);
     }
+
+    Alert.alert('Success', 'Bounty posted successfully!', [
+      {
+        text: 'OK',
+        onPress: () => {
+          setTitle('');
+          setDescription('');
+          setReward('');
+          setDuration('short');
+          setTags('');
+          setCategory(null);
+          setSelectedTemplate(null);
+          setHuntersNeeded('1');
+          setPostToFizz(false);
+          router.push('/(tabs)/my-bounties');
+        },
+      },
+    ]);
   };
 
   return (
@@ -424,15 +407,9 @@ export default function PostBountyScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.clearButton} onPress={handleClear}>
-            <RotateCcw size={20} color="#6B7280" />
-            <Text style={styles.clearButtonText}>Clear</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-            <Text style={styles.submitButtonText}>Post Bounty</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+          <Text style={styles.submitButtonText}>Post Bounty</Text>
+        </TouchableOpacity>
         </ScrollView>
       </View>
   );
@@ -566,35 +543,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#374151',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-    marginBottom: 32,
-  },
-  clearButton: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  clearButtonText: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: '#6B7280',
-  },
   submitButton: {
-    flex: 2,
     backgroundColor: '#8B5CF6',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 32,
   },
   submitButtonText: {
     fontSize: 16,
