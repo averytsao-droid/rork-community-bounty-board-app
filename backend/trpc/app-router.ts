@@ -8,6 +8,7 @@ import { acceptedBountiesProcedure } from "./routes/bounties/accepted";
 import { cancelAcceptedBountyProcedure } from "./routes/bounties/cancel-accepted";
 import { updateBountyStatusProcedure } from "./routes/bounties/update-status";
 import { deleteBountyProcedure } from "./routes/bounties/delete";
+import { completeBountyProcedure } from "./routes/bounties/complete";
 import { listConversationsProcedure } from "./routes/conversations/list";
 import { getMessagesProcedure } from "./routes/conversations/get-messages";
 import { sendMessageProcedure } from "./routes/conversations/send-message";
@@ -26,6 +27,7 @@ export const appRouter = createTRPCRouter({
     cancelAccepted: cancelAcceptedBountyProcedure,
     updateStatus: updateBountyStatusProcedure,
     delete: deleteBountyProcedure,
+    complete: completeBountyProcedure,
   }),
   conversations: createTRPCRouter({
     list: listConversationsProcedure,
