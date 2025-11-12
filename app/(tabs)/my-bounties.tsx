@@ -8,15 +8,27 @@ import {
   Image,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { DollarSign, Users, CheckCircle, XCircle } from 'lucide-react-native';
+import { DollarSign, Users, CheckCircle, XCircle, Award } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { categoryLabels, categoryColors } from '@/mocks/bounties';
 import { Bounty } from '@/types';
 
 export default function MyBountiesScreen() {
-  const { myPostedBounties, acceptedBountiesList, updateBountyStatus, cancelBounty, deleteBounty } = useBountyContext();
+  const { myPostedBounties, acceptedBountiesList, updateBountyStatus, cancelBounty, deleteBounty, currentUser } = useBountyContext();
   const [activeTab, setActiveTab] = useState<'posted' | 'accepted'>('posted');
   const [expandedBountyId, setExpandedBountyId] = useState<string | null>(null);
+
+  console.log('📋 My Bounties Debug:');
+  console.log('  Current User ID:', currentUser.id);
+  console.log('  Posted Bounties:', myPostedBounties.length);
+  console.log('  Accepted Bounties:', acceptedBountiesList.length);
+  console.log('  Accepted Bounty Details:', acceptedBountiesList.map(b => ({
+    id: b.id,
+    title: b.title,
+    postedBy: b.postedBy,
+    status: b.status,
+    isMyBounty: b.postedBy === currentUser.id
+  })));
 
 
 
@@ -33,6 +45,7 @@ export default function MyBountiesScreen() {
 
   const renderBountyCard = (bounty: Bounty, isPosted: boolean) => {
     const isExpanded = expandedBountyId === bounty.id;
+    const isPoster = bounty.postedBy === currentUser.id;
     
     return (
     <TouchableOpacity 
@@ -150,16 +163,16 @@ export default function MyBountiesScreen() {
       {isPosted && bounty.status === 'in-progress' && (
         <View style={styles.actionsContainer}>
           <TouchableOpacity
-            style={styles.actionButton}
+            style={[styles.actionButton, styles.actionButtonSuccess]}
             onPress={() => updateBountyStatus(bounty.id, 'completed')}
           >
-            <CheckCircle size={16} color="#10B981" />
-            <Text style={styles.actionButtonText}>Mark Completed</Text>
+            <Award size={16} color="#10B981" />
+            <Text style={[styles.actionButtonText, styles.actionButtonTextSuccess]}>Complete Bounty</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {!isPosted && (
+      {!isPosted && !isPoster && (
         <View style={styles.actionsContainer}>
           <TouchableOpacity
             style={[styles.actionButton, styles.actionButtonDanger]}
@@ -174,6 +187,20 @@ export default function MyBountiesScreen() {
             <XCircle size={16} color="#EF4444" />
             <Text style={[styles.actionButtonText, styles.actionButtonTextDanger]}>
               Cancel Bounty
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!isPosted && isPoster && bounty.status === 'in-progress' && (
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionButtonSuccess]}
+            onPress={() => updateBountyStatus(bounty.id, 'completed')}
+          >
+            <Award size={16} color="#10B981" />
+            <Text style={[styles.actionButtonText, styles.actionButtonTextSuccess]}>
+              Complete Bounty & Pay Hunter
             </Text>
           </TouchableOpacity>
         </View>
@@ -441,6 +468,12 @@ const styles = StyleSheet.create({
   },
   actionButtonTextDanger: {
     color: '#EF4444',
+  },
+  actionButtonSuccess: {
+    backgroundColor: '#D1FAE5',
+  },
+  actionButtonTextSuccess: {
+    color: '#10B981',
   },
   expandedInfo: {
     marginTop: 12,

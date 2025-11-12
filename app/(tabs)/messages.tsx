@@ -13,7 +13,7 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Send, ArrowLeft, Users, DollarSign } from 'lucide-react-native';
+import { Send, ArrowLeft, Users, DollarSign, ExternalLink } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { Conversation, ConversationType, Message } from '@/types';
 
@@ -87,6 +87,7 @@ export default function MessagesScreen() {
     const accepted: Conversation[] = [];
 
     filteredConversations.forEach(conv => {
+      // Check if current user is the poster of the bounty
       const bounty = [...bounties, ...myPostedBounties].find(b => b.id === conv.bountyId);
       if (bounty && bounty.postedBy === currentUser.id) {
         posted.push(conv);
@@ -363,6 +364,16 @@ export default function MessagesScreen() {
                   </Text>
                 )}
               </View>
+              {selectedConversation.bountyId && (
+                <TouchableOpacity
+                  style={styles.linkToBountyButton}
+                  onPress={() => {
+                    router.push('/(tabs)/my-bounties');
+                  }}
+                >
+                  <ExternalLink size={20} color="#8B5CF6" />
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <>
@@ -1074,5 +1085,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700' as const,
     color: '#FFFFFF',
+  },
+  linkToBountyButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3E8FF',
+    marginLeft: 8,
   },
 });

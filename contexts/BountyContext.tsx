@@ -106,17 +106,43 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
     try {
       const db = getFirebaseFirestore();
       const bountiesRef = collection(db, 'bounties');
-      const q = query(bountiesRef, where('acceptedHunters', 'array-contains', user.id));
-      const snapshot = await getDocs(q);
-      const loadedBounties = snapshot.docs.map(doc => ({
+      
+      // Load bounties where user is a hunter
+      const qAsHunter = query(bountiesRef, where('acceptedHunters', 'array-contains', user.id));
+      const snapshotAsHunter = await getDocs(qAsHunter);
+      const bountiesAsHunter = snapshotAsHunter.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate() || new Date(),
       })) as Bounty[];
-      console.log('Loaded accepted bounties from Firebase:', loadedBounties.length);
-      setAcceptedBountiesList(loadedBounties);
-      setAcceptedBounties(loadedBounties.map(b => b.id));
-      setMyAppliedBounties(loadedBounties.map(b => b.id));
+      
+      // Load bounties posted by user that have been accepted
+      const qAsPoster = query(
+        bountiesRef, 
+        where('postedBy', '==', user.id),
+        where('status', 'in', ['in-progress', 'completed'])
+      );
+      const snapshotAsPoster = await getDocs(qAsPoster);
+      const bountiesAsPoster = snapshotAsPoster.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as Bounty[];
+      
+      // Combine and deduplicate bounties
+      const allAcceptedBounties = [...bountiesAsHunter, ...bountiesAsPoster];
+      const uniqueBounties = Array.from(
+        new Map(allAcceptedBounties.map(b => [b.id, b])).values()
+      );
+      
+      console.log('Loaded accepted bounties from Firebase:');
+      console.log('  As Hunter:', bountiesAsHunter.length);
+      console.log('  As Poster:', bountiesAsPoster.length);
+      console.log('  Total Unique:', uniqueBounties.length);
+      
+      setAcceptedBountiesList(uniqueBounties);
+      setAcceptedBounties(bountiesAsHunter.map(b => b.id));
+      setMyAppliedBounties(bountiesAsHunter.map(b => b.id));
     } catch (error) {
       console.error('Error loading accepted bounties:', error);
     }
@@ -421,9 +447,14 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       const bountyRef = doc(db, 'bounties', bountyId);
       await updateDoc(bountyRef, { status });
       
+      if (status === 'completed') {
+        console.log('💰 Bounty marked as completed - should handle payment here');
+      }
+      
       await Promise.all([
         loadBounties(),
         loadMyBounties(),
+        loadAcceptedBounties(),
       ]);
       
       console.log('Bounty status updated successfully:', bountyId, status);
@@ -431,7 +462,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('Error updating bounty status:', error);
       throw error;
     }
-  }, [loadBounties, loadMyBounties]);
+  }, [loadBounties, loadMyBounties, loadAcceptedBounties]);
 
   const sendMessage = useCallback(async (conversationId: string, content: string) => {
     try {
