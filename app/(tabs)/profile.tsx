@@ -30,7 +30,8 @@ export default function ProfileScreen() {
             try {
               console.log('Logging out...');
               await logout();
-              console.log('Logout successful');
+              console.log('Logout successful, navigating to login...');
+              router.replace('/login');
             } catch (error) {
               console.error('Error during logout:', error);
               Alert.alert('Error', 'Failed to logout. Please try again.');
