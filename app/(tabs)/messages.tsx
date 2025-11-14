@@ -351,7 +351,7 @@ export default function MessagesScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={100}
       >
-        <View style={styles.chatHeader}>
+        <View style={[styles.chatHeader, { paddingTop: insets.top + 16 }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => setSelectedConversation(null)}
