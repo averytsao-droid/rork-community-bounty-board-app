@@ -8,7 +8,7 @@ import {
   Image,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { DollarSign, Users, CheckCircle, XCircle, Award } from 'lucide-react-native';
+import { DollarSign, Users, XCircle, Award } from 'lucide-react-native';
 import { useBountyContext } from '@/contexts/BountyContext';
 import { categoryLabels, categoryColors } from '@/mocks/bounties';
 import { Bounty } from '@/types';
@@ -142,13 +142,6 @@ export default function MyBountiesScreen() {
       {isPosted && bounty.status === 'open' && (
         <View style={styles.actionsContainer}>
           <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => updateBountyStatus(bounty.id, 'in-progress')}
-          >
-            <CheckCircle size={16} color="#8B5CF6" />
-            <Text style={styles.actionButtonText}>Mark In Progress</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.actionButton, styles.actionButtonDanger]}
             onPress={() => updateBountyStatus(bounty.id, 'cancelled')}
           >
@@ -160,17 +153,7 @@ export default function MyBountiesScreen() {
         </View>
       )}
 
-      {isPosted && bounty.status === 'in-progress' && (
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.actionButtonSuccess]}
-            onPress={() => updateBountyStatus(bounty.id, 'completed')}
-          >
-            <Award size={16} color="#10B981" />
-            <Text style={[styles.actionButtonText, styles.actionButtonTextSuccess]}>Complete Bounty</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       {!isPosted && !isPoster && (
         <View style={styles.actionsContainer}>
@@ -210,6 +193,7 @@ export default function MyBountiesScreen() {
   };
 
   const cancelledBounties = myPostedBounties.filter(b => b.status === 'cancelled');
+  const openPostedBounties = myPostedBounties.filter(b => b.status === 'open' || b.status === 'cancelled');
 
   return (
     <View style={styles.container}>
@@ -260,7 +244,7 @@ export default function MyBountiesScreen() {
         showsVerticalScrollIndicator={false}
       >
         {activeTab === 'posted' ? (
-          myPostedBounties.length === 0 ? (
+          openPostedBounties.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No posted bounties</Text>
               <Text style={styles.emptySubtext}>
@@ -268,7 +252,7 @@ export default function MyBountiesScreen() {
               </Text>
             </View>
           ) : (
-            myPostedBounties.map(b => renderBountyCard(b, true))
+            openPostedBounties.map(b => renderBountyCard(b, true))
           )
         ) : (
           acceptedBountiesList.length === 0 ? (
