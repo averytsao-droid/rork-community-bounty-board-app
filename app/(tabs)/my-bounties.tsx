@@ -153,7 +153,19 @@ export default function MyBountiesScreen() {
         </View>
       )}
 
-
+      {!isPosted && isPoster && (
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionButtonSuccess]}
+            onPress={() => updateBountyStatus(bounty.id, 'completed')}
+          >
+            <Award size={16} color="#10B981" />
+            <Text style={[styles.actionButtonText, styles.actionButtonTextSuccess]}>
+              Complete Bounty & Pay Hunter
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {!isPosted && !isPoster && (
         <View style={styles.actionsContainer}>
@@ -174,26 +186,12 @@ export default function MyBountiesScreen() {
           </TouchableOpacity>
         </View>
       )}
-
-      {!isPosted && isPoster && bounty.status === 'in-progress' && (
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.actionButtonSuccess]}
-            onPress={() => updateBountyStatus(bounty.id, 'completed')}
-          >
-            <Award size={16} color="#10B981" />
-            <Text style={[styles.actionButtonText, styles.actionButtonTextSuccess]}>
-              Complete Bounty & Pay Hunter
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </TouchableOpacity>
   );
   };
 
   const cancelledBounties = myPostedBounties.filter(b => b.status === 'cancelled');
-  const openPostedBounties = myPostedBounties.filter(b => b.status === 'open' || b.status === 'cancelled');
+  const openPostedBounties = myPostedBounties.filter(b => b.status === 'open');
 
   return (
     <View style={styles.container}>
@@ -207,7 +205,7 @@ export default function MyBountiesScreen() {
           <Text
             style={[styles.tabText, activeTab === 'posted' && styles.tabTextActive]}
           >
-            Posted ({myPostedBounties.length})
+            Posted ({openPostedBounties.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity

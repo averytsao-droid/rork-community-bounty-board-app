@@ -109,8 +109,11 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       const db = getFirebaseFirestore();
       const bountiesRef = collection(db, 'bounties');
       
-      // Load bounties where user is a hunter
-      const qAsHunter = query(bountiesRef, where('acceptedHunters', 'array-contains', user.id));
+      const qAsHunter = query(
+        bountiesRef, 
+        where('acceptedHunters', 'array-contains', user.id),
+        where('status', '==', 'in-progress')
+      );
       const snapshotAsHunter = await getDocs(qAsHunter);
       const bountiesAsHunter = snapshotAsHunter.docs.map(doc => ({
         id: doc.id,
@@ -118,11 +121,10 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         createdAt: doc.data().createdAt?.toDate() || new Date(),
       })) as Bounty[];
       
-      // Load bounties posted by user that have been accepted
       const qAsPoster = query(
         bountiesRef, 
         where('postedBy', '==', user.id),
-        where('status', 'in', ['in-progress', 'completed'])
+        where('status', '==', 'in-progress')
       );
       const snapshotAsPoster = await getDocs(qAsPoster);
       const bountiesAsPoster = snapshotAsPoster.docs.map(doc => ({
@@ -131,13 +133,12 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         createdAt: doc.data().createdAt?.toDate() || new Date(),
       })) as Bounty[];
       
-      // Combine and deduplicate bounties
       const allAcceptedBounties = [...bountiesAsHunter, ...bountiesAsPoster];
       const uniqueBounties = Array.from(
         new Map(allAcceptedBounties.map(b => [b.id, b])).values()
       );
       
-      console.log('Loaded accepted bounties from Firebase:');
+      console.log('Loaded accepted bounties from Firebase (status=in-progress only):');
       console.log('  As Hunter:', bountiesAsHunter.length);
       console.log('  As Poster:', bountiesAsPoster.length);
       console.log('  Total Unique:', uniqueBounties.length);
@@ -372,8 +373,9 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       await updateDoc(bountyRef, {
         acceptedHunters: arrayUnion(currentUser.id),
         applicants: (bounty.applicants || 0) + 1,
+        status: 'in-progress',
       });
-      console.log('✅ Bounty updated with acceptedHunters');
+      console.log('✅ Bounty updated with acceptedHunters and status=in-progress');
 
       const huntersNeeded = bounty.huntersNeeded || 1;
       const acceptedHunters = bounty.acceptedHunters || [];
@@ -1091,11 +1093,23 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       
       const db = getFirebaseFirestore();
       const bountyRef = doc(db, 'bounties', bountyId);
+      const bountyDoc = await getDoc(bountyRef);
+      
+      if (!bountyDoc.exists()) {
+        throw new Error('Bounty not found');
+      }
+      
+      const bountyData = bountyDoc.data();
+      const acceptedHunters = bountyData.acceptedHunters || [];
+      const updatedHunters = acceptedHunters.filter((id: string) => id !== user.id);
       
       await updateDoc(bountyRef, {
         acceptedHunters: arrayRemove(user.id),
         applicants: (bounties.find(b => b.id === bountyId)?.applicants || 1) - 1,
+        status: updatedHunters.length === 0 ? 'open' : 'in-progress',
       });
+      
+      console.log('Bounty status:', updatedHunters.length === 0 ? 'Changed to open' : 'Kept as in-progress');
       
       const conversationsRef = collection(db, 'conversations');
       const q = query(conversationsRef, where('bountyId', '==', bountyId), where('participantIds', 'array-contains', user.id));
