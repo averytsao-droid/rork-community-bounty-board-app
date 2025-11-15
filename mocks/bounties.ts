@@ -141,10 +141,10 @@ export const bountyTemplates: BountyTemplate[] = [
   },
   {
     id: 'template-2',
-    name: 'Add My Order',
+    name: 'Add My Order Onto Yours',
     category: 'need-dining-dollars',
     title: 'Add my order onto yours at [location]',
-    description: 'Location:\n\nWhat I need:\n- \n- \n\nWhen:\nWhere to deliver:\n\nNote: Exchange rate is $2 = 3 dining dollars\n\nWill Venmo immediately + tip!',
+    description: 'What I need:\n- \n- \n\nWhen:\nWhere to deliver:\n\nNote: Exchange rate is $1 = 2 dining dollars\n\nWill Venmo immediately + tip!',
     tags: ['Food', 'Dining Dollars'],
   },
   {
