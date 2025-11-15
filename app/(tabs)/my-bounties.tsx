@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  Modal,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { DollarSign, Users, XCircle, Award } from 'lucide-react-native';
@@ -17,6 +18,8 @@ export default function MyBountiesScreen() {
   const { myPostedBounties, acceptedBountiesList, updateBountyStatus, cancelBounty, deleteBounty, currentUser } = useBountyContext();
   const [activeTab, setActiveTab] = useState<'posted' | 'accepted'>('posted');
   const [expandedBountyId, setExpandedBountyId] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [completedBountyReward, setCompletedBountyReward] = useState(0);
 
   console.log('📋 My Bounties Debug:');
   console.log('  Current User ID:', currentUser.id);
@@ -157,7 +160,11 @@ export default function MyBountiesScreen() {
         <View style={styles.actionsContainer}>
           <TouchableOpacity
             style={[styles.actionButton, styles.actionButtonSuccess]}
-            onPress={() => updateBountyStatus(bounty.id, 'completed')}
+            onPress={async () => {
+              setCompletedBountyReward(bounty.reward);
+              await updateBountyStatus(bounty.id, 'completed');
+              setShowPaymentModal(true);
+            }}
           >
             <Award size={16} color="#10B981" />
             <Text style={[styles.actionButtonText, styles.actionButtonTextSuccess]}>
@@ -196,6 +203,32 @@ export default function MyBountiesScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: 'My Bounties' }} />
+      
+      <Modal
+        visible={showPaymentModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPaymentModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Payment System Under Construction</Text>
+            <Text style={styles.modalMessage}>
+              Please pay each other using Venmo
+            </Text>
+            <View style={styles.rewardContainer}>
+              <Text style={styles.rewardLabel}>Bounty Reward:</Text>
+              <Text style={styles.rewardAmount}>${completedBountyReward}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowPaymentModal(false)}
+            >
+              <Text style={styles.modalButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       
       <View style={styles.tabsContainer}>
         <TouchableOpacity
@@ -517,6 +550,72 @@ const styles = StyleSheet.create({
   },
   clearButtonText: {
     fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: '#111827',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  rewardContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 16,
+    width: '100%',
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  rewardLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 8,
+    fontWeight: '500' as const,
+  },
+  rewardAmount: {
+    fontSize: 32,
+    fontWeight: '700' as const,
+    color: '#8B5CF6',
+  },
+  modalButton: {
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
     fontWeight: '600' as const,
     color: '#FFFFFF',
   },
