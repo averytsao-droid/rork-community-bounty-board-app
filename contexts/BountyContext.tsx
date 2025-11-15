@@ -871,6 +871,15 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       const db = getFirebaseFirestore();
       const conversationsRef = collection(db, 'conversations');
       
+      const isUserPoster = bounty.postedBy === currentUser.id;
+      
+      if (isUserPoster) {
+        console.log('⚠️ User is the poster of this bounty. Cannot negotiate on own bounty.');
+        return;
+      }
+      
+      console.log('💬 Starting negotiation as HUNTER for bounty:', bountyId);
+      
       const hunterNegotiationQuery = query(
         conversationsRef,
         where('bountyId', '==', bountyId),
@@ -879,7 +888,6 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       const hunterSnapshot = await getDocs(hunterNegotiationQuery);
       
       let hunterConversationId: string;
-      let hunterConversation: any;
       
       if (hunterSnapshot.empty) {
         console.log('💬 Creating NEW hunter-negotiation group chat for bounty:', bountyId);
@@ -929,7 +937,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         await addDoc(collection(db, 'messages'), hunterInitialMessageData);
         console.log('💬 Created initial message in hunter conversation');
       } else {
-        hunterConversation = hunterSnapshot.docs[0];
+        const hunterConversation = hunterSnapshot.docs[0];
         hunterConversationId = hunterConversation.id;
         const existingData = hunterConversation.data();
         
@@ -1045,6 +1053,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
             participantIds: arrayUnion(currentUser.id),
             lastMessage: `${currentUser.name} joined the negotiation`,
             lastMessageTime: Timestamp.now(),
+            unreadCount: (existingData.unreadCount || 0) + 1,
           });
           
           const joinMessageData = {
@@ -1054,7 +1063,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
             senderAvatar: '',
             content: `${currentUser.name} joined the negotiation`,
             timestamp: Timestamp.now(),
-            read: true,
+            read: false,
             type: 'text',
           };
           
@@ -1081,7 +1090,7 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
       console.error('❌ Error starting negotiation:', error);
       throw error;
     }
-  }, [bounties, conversations, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
+  }, [bounties, currentUser, addNotification, loadConversations, loadMessagesForConversation]);
 
   const cancelBounty = useCallback(async (bountyId: string) => {
     if (!user) {
@@ -1300,8 +1309,9 @@ export const [BountyProvider, useBountyContext] = createContextHook(() => {
         const bountyRef = doc(db, 'bounties', bountyId);
         await updateDoc(bountyRef, {
           acceptedHunters: arrayUnion(currentUser.id),
+          status: 'in-progress',
         });
-        console.log('✅ Added hunter to acceptedHunters');
+        console.log('✅ Added hunter to acceptedHunters and updated status to in-progress');
       }
       
       await loadConversations();
