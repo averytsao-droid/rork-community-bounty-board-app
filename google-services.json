@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "926975971487",
+    "project_id": "bounty-board-95ab5",
+    "storage_bucket": "bounty-board-95ab5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:926975971487:android:YOUR_ANDROID_APP_ID",
+        "android_client_info": {
+          "package_name": "app.rork.community_bounty_board_kaa17vqs"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "926975971487-2l0b8aaikme88qrd5hn4njdfhlcvrpel.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8n_WpKuRoyIdWaSobsh6ZB30TudFuV08"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "926975971487-2l0b8aaikme88qrd5hn4njdfhlcvrpel.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
