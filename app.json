@@ -1,42 +1,52 @@
 {
-  "expo": {
-    "name": "Main Bounty Board",
-    "slug": "community-bounty-board-kaa17vqs",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
+"expo": {
+  "name": "Main Bounty Board",
+  "slug": "community-bounty-board-kaa17vqs",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "icon": "./assets/images/icon.png",
+  "scheme": "myapp",
+  "userInterfaceStyle": "automatic",
+  "newArchEnabled": true,
+  "splash": {
+    "image": "./assets/images/splash-icon.png",
+    "resizeMode": "contain",
+    "backgroundColor": "#ffffff"
+  },
+  "ios": {
+    "supportsTablet": true,
+    "bundleIdentifier": "app.rork.community-bounty-board-kaa17vqs",
+    "googleServicesFile": "./GoogleService-Info.plist"
+  },
+  "android": {
+    "adaptiveIcon": {
+      "foregroundImage": "./assets/images/adaptive-icon.png",
       "backgroundColor": "#ffffff"
     },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "app.rork.community-bounty-board-kaa17vqs"
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "package": "app.rork.community_bounty_board_kaa17vqs"
-    },
-    "web": {
-      "favicon": "./assets/images/favicon.png"
-    },
-    "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://rork.com/"
-        }
-      ]
-    ],
-    "experiments": {
-      "typedRoutes": true
-    }
+    "package": "app.rork.community_bounty_board_kaa17vqs",
+    "googleServicesFile": "./google-services.json"
+  },
+  "web": {
+    "favicon": "./assets/images/favicon.png"
+  },
+  "plugins": [
+    [
+      "expo-router",
+      {
+        "origin": "https://rork.com/"
+      }
+    ]
+  ],
+  "extra": {
+    "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAVlkTl-xlwE6ynpJkjfGW62blk0MMbsW0",
+    "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "bounty-board-95ab5.firebaseapp.com",
+    "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "bounty-board-95ab5",
+    "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "bounty-board-95ab5.firebasestorage.app",
+    "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "926975971487",
+    "EXPO_PUBLIC_FIREBASE_APP_ID": "1:926975971487:web:f26cc93c90bcec6adb12aa"
+  },
+  "experiments": {
+    "typedRoutes": true
   }
+}
 }
