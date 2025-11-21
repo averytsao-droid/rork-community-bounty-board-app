@@ -3,6 +3,7 @@ import { httpLink } from "@trpc/client";
 import type { AppRouter } from "@/backend/trpc/app-router";
 import superjson from "superjson";
 import Constants from 'expo-constants';
+import { getFirebaseAuth } from './firebaseClient';
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -31,7 +32,23 @@ export const trpcClient = trpc.createClient({
       fetch: async (url, options) => {
         console.log('🌐 tRPC Request:', url);
         try {
-          const response = await fetch(url, options);
+          const auth = getFirebaseAuth();
+          const user = auth.currentUser;
+          
+          const headers: HeadersInit = {
+            ...(options?.headers as Record<string, string>),
+          };
+          
+          if (user) {
+            const token = await user.getIdToken();
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const response = await fetch(url, {
+            ...options,
+            headers,
+          });
+          
           console.log('✅ tRPC Response:', response.status, response.statusText);
           return response;
         } catch (error: any) {
