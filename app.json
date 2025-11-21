@@ -18,10 +18,12 @@
 "bundleIdentifier": "app.rork.community-bounty-board-kaa17vqs"
 },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
+"adaptiveIcon": {
+  "foregroundImage": "./assets/images/adaptive-icon.png",
+  "backgroundColor": "#ffffff"
+},
+"package": "app.rork.community_bounty_board_kaa17vqs"
+},
       "package": "app.rork.community_bounty_board_kaa17vqs",
       "googleServicesFile": "./google-services.json"
     },
