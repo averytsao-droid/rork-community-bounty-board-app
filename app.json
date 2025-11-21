@@ -14,10 +14,9 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "app.rork.community-bounty-board-kaa17vqs",
-      "googleServicesFile": "./GoogleService-Info.plist"
-    },
+"supportsTablet": true,
+"bundleIdentifier": "app.rork.community-bounty-board-kaa17vqs"
+},
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
