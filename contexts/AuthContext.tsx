@@ -130,10 +130,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, []);
 
   useEffect(() => {
-    const auth = getFirebaseAuth();
-    const db = getFirebaseFirestore();
+    let unsubscribe: (() => void) | undefined;
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const initAuth = async () => {
+      try {
+        const auth = getFirebaseAuth();
+        const db = getFirebaseFirestore();
+
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('Auth state changed:', firebaseUser?.uid);
       
       if (firebaseUser) {
@@ -173,11 +177,24 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         console.log('No Firebase user');
       }
       
-      setIsLoading(false);
-      setIsInitialized(true);
-    });
+          setIsLoading(false);
+          setIsInitialized(true);
+        });
+      } catch (error: any) {
+        console.error('❌ Auth initialization error:', error);
+        setInitializationError(error?.message || 'Failed to initialize authentication');
+        setIsLoading(false);
+        setIsInitialized(true);
+      }
+    };
 
-    return () => unsubscribe();
+    initAuth();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [loadNotificationsForUser]);
 
 
